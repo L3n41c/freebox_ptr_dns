@@ -1,5 +1,12 @@
 # freebox-ptr-dns
 
+![CI](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/ci.yml/badge.svg)
+![Lint](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/lint.yml/badge.svg)
+![CodeQL](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/codeql.yml/badge.svg)
+![Release](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/release.yml/badge.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/L3n41c/freebox_ptr_dns)](https://goreportcard.com/report/github.com/L3n41c/freebox_ptr_dns)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A tiny DNS server that answers PTR queries for the local network by asking
 the Freebox API. Designed to plug into Pi-hole's `rev-server` so the Pi-hole
 dashboard shows device names instead of IPs and MAC addresses.

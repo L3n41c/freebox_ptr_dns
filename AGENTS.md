@@ -28,7 +28,7 @@ These guidelines help ensure consistency, security, and maintainability.
 - **Example**: `feat/ipv6-support`, `fix/ptr-query-bug`, `docs/update-readme`
 
 ### Commits
-- **Format**: `[type]: message` (e.g., `feat: add IPv6 support`)
+- **Format**: `type: message` (e.g., `feat: add IPv6 support`)
 - **Valid types**: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `style`
 - **Message**: Clear, concise, in English
 
@@ -51,7 +51,7 @@ These guidelines help ensure consistency, security, and maintainability.
 ## ⚙️ Project Configuration
 
 ### Language
-- **Go**: Minimum version `1.26.0` (see `go.mod`)
+- **Go**: Minimum version `1.26.3` (see `go.mod`)
 - **Style**: Follow Go conventions (`gofmt`, `go vet`)
 - **Linter**: `golangci-lint` with project configuration
 - **Tests**: Always use `-race` and cover edge cases
@@ -178,7 +178,8 @@ make dist            # Build for all architectures
 
 - **Check CI before push**:
   ```bash
-  make ci   # (add to Makefile if needed)
+  # Run the repository's existing local validation commands before pushing
+  # (for example: the documented test, lint, or build commands that are actually defined)
   ```
 
 - **Keep commits atomic**: 1 logical change = 1 commit

@@ -1,0 +1,45 @@
+version: 2
+
+project_name: freebox-ptr-dns
+
+builds:
+  - id: freebox-ptr-dns
+    binary: freebox-ptr-dns
+    main: ./cmd/freebox-ptr-dns
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - 7
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+archives:
+  - format: tar.gz
+    name_template: '{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+
+release:
+  github:
+    owner: L3n41c
+    name: freebox_ptr_dns
+  draft: false
+  replace_existing_draft: true
+  prerelease: auto

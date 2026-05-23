@@ -159,7 +159,7 @@ make dist            # Build for all architectures
 ## 🛑 Forbidden Actions
 
 - ❌ `git push origin main` – Always use a branch + PR
-- ❌ `git commit --amend` on already pushed commits (except to fix local commit)
+- ❌ `git commit --amend` after pushing a commit – amend is OK only before pushing
 - ❌ `git rebase` on shared branches
 - ❌ Push secrets to the repo
 - ❌ Merge PR without tests (when applicable)

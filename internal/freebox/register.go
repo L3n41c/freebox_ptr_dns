@@ -1,0 +1,84 @@
+package freebox
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+)
+
+// Register runs the full authorization flow:
+//  1. POST /api/v4/login/authorize/ to obtain an app_token + track_id.
+//  2. Poll GET /api/v4/login/authorize/{track_id} until the user grants
+//     (or denies / times out) on the Freebox front panel.
+//
+// On success returns the new app_token. The caller is responsible for
+// persisting it and calling SetAppToken on the client.
+func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Duration) (string, error) {
+	if pollInterval <= 0 {
+		pollInterval = 2 * time.Second
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+
+	var auth authorizeResult
+	err := c.doPlain(ctx, "POST", "/api/v4/login/authorize/", authorizeRequest{
+		AppID:      c.opt.AppID,
+		AppName:    c.opt.AppName,
+		AppVersion: c.opt.AppVersion,
+		DeviceName: c.opt.DeviceName,
+	}, &auth)
+	if err != nil {
+		return "", fmt.Errorf("authorize: %w", err)
+	}
+
+	OnPrompt(c.opt.AppName)
+
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		status, err := c.authorizeStatus(ctx, auth.TrackID)
+		if err != nil {
+			return "", fmt.Errorf("track authorization: %w", err)
+		}
+		switch status {
+		case "granted":
+			return auth.AppToken, nil
+		case "pending":
+		case "denied":
+			return "", ErrAuthorizationDenied
+		case "timeout":
+			return "", ErrAuthorizationTimedOut
+		case "unknown":
+			return "", errors.New("freebox: track unknown")
+		default:
+			return "", fmt.Errorf("freebox: unexpected status %q", status)
+		}
+
+		if time.Now().After(deadline) {
+			return "", ErrAuthorizationTimedOut
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *Client) authorizeStatus(ctx context.Context, trackID int) (string, error) {
+	var out authorizeStatusResult
+	err := c.doPlain(ctx, "GET", fmt.Sprintf("/api/v4/login/authorize/%d", trackID), nil, &out)
+	if err != nil {
+		return "", err
+	}
+	return out.Status, nil
+}
+
+// OnPrompt is called once at the start of Register to notify the operator
+// that they must approve the app on the Freebox front panel. Default is a
+// no-op; main.go installs a slog-based printer, tests override it.
+var OnPrompt = func(appName string) {}

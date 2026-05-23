@@ -1,0 +1,5 @@
+/freebox-ptr-dns
+/freebox-ptr-dns-*
+/dist/
+*.test
+*.out

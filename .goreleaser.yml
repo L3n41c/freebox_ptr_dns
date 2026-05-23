@@ -2,35 +2,6 @@ version: 2
 
 project_name: freebox-ptr-dns
 
-before:
-  builds:
-    - env:
-        - CGO_ENABLED=0
-        - GOOS=linux
-        - GOARCH=amd64
-      goos: linux
-      goarch: amd64
-      ldflags:
-        - -s -w
-    - env:
-        - CGO_ENABLED=0
-        - GOOS=linux
-        - GOARCH=arm64
-      goos: linux
-      goarch: arm64
-      ldflags:
-        - -s -w
-    - env:
-        - CGO_ENABLED=0
-        - GOOS=linux
-        - GOARCH=arm
-        - GOARM=7
-      goos: linux
-      goarch: arm
-      goarm: 7
-      ldflags:
-        - -s -w
-
 builds:
   - id: freebox-ptr-dns
     binary: freebox-ptr-dns
@@ -68,7 +39,7 @@ archives:
 release:
   github:
     owner: L3n41c
-    name: freebox-ptr_dns
+    name: freebox_ptr_dns
   draft: false
   replace_existing_draft: true
   prerelease: auto

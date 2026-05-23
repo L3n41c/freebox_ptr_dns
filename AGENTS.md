@@ -39,7 +39,7 @@ These guidelines help ensure consistency, security, and maintainability.
 - **NEVER** use `--no-gpg-sign` flag to bypass signing
 
 ### Pull Requests
-- **Title**: Clear and descriptive, prefer `[type]: description` format
+- **Title**: Clear and descriptive, prefer `type: description` format
 - **Description**: Always include:
   - Description of changes
   - Motivation/context
@@ -51,13 +51,14 @@ These guidelines help ensure consistency, security, and maintainability.
 ## ⚙️ Project Configuration
 
 ### Language
-- **Go**: Minimum version `1.26.3` (see `go.mod`)
+- **Go**: Minimum version (see `go.mod`)
 - **Style**: Follow Go conventions (`gofmt`, `go vet`)
 - **Linter**: `golangci-lint` with project configuration
-- **Tests**: Always use `-race` and cover edge cases
+- **Tests**: Use `-race` for local/CI race testing and cover edge cases
+- **Race detector note**: `-race` requires CGO enabled and may not work for cross-compiles
 
 ### Build
-- **Static**: Always use `CGO_ENABLED=0`
+- **Static/Release builds**: Use `CGO_ENABLED=0`
 - **Optimization**: Always use `-ldflags="-s -w"`
 - **Multi-architecture**: Support `amd64`, `arm64`, `armv7`
 

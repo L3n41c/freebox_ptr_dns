@@ -54,11 +54,11 @@ func SaveToken(path, token string) error {
 		}
 	}()
 	if _, err := f.WriteString(token + "\n"); err != nil {
-		f.Close()
+		f.Close() //nolint:errcheck
 		return fmt.Errorf("write token: %w", err)
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		f.Close() //nolint:errcheck
 		return fmt.Errorf("sync token: %w", err)
 	}
 	if err := f.Close(); err != nil {
@@ -83,7 +83,7 @@ func LoadToken(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	st, err := f.Stat()
 	if err != nil {

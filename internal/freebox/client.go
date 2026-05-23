@@ -70,7 +70,7 @@ func (c *Client) doPlain(ctx context.Context, method, path string, body any, out
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	return parseEnvelope(resp, out)
 }
 
@@ -92,7 +92,7 @@ func (c *Client) doAuth(ctx context.Context, method, path string, body any, out 
 			return fmt.Errorf("%s %s: %w", method, path, err)
 		}
 		err = parseEnvelope(resp, out)
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck
 		var apiErr *APIError
 		if attempt == 0 && errors.As(err, &apiErr) && apiErr.Code == "auth_required" {
 			c.invalidateSession()

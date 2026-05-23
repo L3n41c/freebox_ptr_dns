@@ -17,6 +17,7 @@ import (
 	"github.com/L3n41c/freebox_ptr_dns/internal/dns"
 	"github.com/L3n41c/freebox_ptr_dns/internal/freebox"
 	"github.com/L3n41c/freebox_ptr_dns/internal/hosts"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -128,30 +129,15 @@ func run(configPath string) error {
 		slog.Info("hosts refreshed", "n", cache.Len())
 	}
 
-	pollerDone := make(chan error, 1)
-	go func() {
-		pollerDone <- poller.Run(ctx)
-	}()
-	serverDone := make(chan error, 1)
-	go func() {
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return poller.Run(ctx)
+	})
+	g.Go(func() error {
 		slog.Info("DNS server listening", "addr", cfg.DNS.Listen)
-		serverDone <- server.ListenAndServe(ctx)
-	}()
-
-	// Whichever goroutine returns first determines the exit reason; we then
-	// tear down the other and drain it. This makes a fatal poller error
-	// (e.g. revoked app_token) shut down the DNS server promptly instead of
-	// idling until SIGTERM.
-	var firstErr error
-	select {
-	case firstErr = <-pollerDone:
-		server.Shutdown()
-		<-serverDone
-	case firstErr = <-serverDone:
-		cancel()
-		<-pollerDone
-	}
-	return firstErr
+		return server.ListenAndServe(ctx)
+	})
+	return g.Wait()
 }
 
 func promptOnFreebox(appName string) {

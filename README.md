@@ -209,4 +209,4 @@ sudo journalctl -u freebox-ptr-dns -f
 
 ## License
 
-Personal project, no license declared yet.
+Licensed under the [MIT License](LICENSE).

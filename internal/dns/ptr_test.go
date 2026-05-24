@@ -3,6 +3,9 @@ package dns
 import (
 	"net/netip"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAddrFromPTR(t *testing.T) {
@@ -88,17 +91,11 @@ func TestAddrFromPTR(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := AddrFromPTR(tt.qname)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got %v", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			want := netip.MustParseAddr(tt.want)
-			if got != want {
-				t.Errorf("got %v, want %v", got, want)
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				want := netip.MustParseAddr(tt.want)
+				assert.Equal(t, want, got)
 			}
 		})
 	}

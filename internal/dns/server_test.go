@@ -7,6 +7,8 @@ import (
 	"time"
 
 	mdns "github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/L3n41c/freebox_ptr_dns/internal/hosts"
 )
@@ -48,126 +50,102 @@ func newHandler(t *testing.T, populate map[string]string, networks []string) *Ha
 	return h
 }
 
-func TestHandler_PTRHit(t *testing.T) {
-	h := newHandler(t, map[string]string{"192.168.1.42": "laptop.lan."}, []string{"192.168.0.0/16"})
-
-	w := &recWriter{}
-	h.ServeDNS(w, newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR))
-
-	if w.msg == nil {
-		t.Fatal("no response")
+func TestHandler_ServeDNS(t *testing.T) {
+	tests := []struct {
+		name      string
+		populate  map[string]string
+		networks   []string
+		question   func() *mdns.Msg
+		wantRcode  int
+		wantPTR    string
+		wantTTL    uint32
+	}{
+		{
+			name:      "PTR hit IPv4",
+			populate:  map[string]string{"192.168.1.42": "laptop.lan."},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg { return newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR) },
+			wantRcode:  mdns.RcodeSuccess,
+			wantPTR:    "laptop.lan.",
+			wantTTL:    300,
+		},
+		{
+			name:      "PTR hit IPv6",
+			populate:  map[string]string{"fd00::1": "router.lan."},
+			networks:   []string{"fd00::/8"},
+			question:   func() *mdns.Msg { qname, _ := mdns.ReverseAddr("fd00::1"); return newQuestion(qname, mdns.TypePTR) },
+			wantRcode:  mdns.RcodeSuccess,
+			wantPTR:    "router.lan.",
+		},
+		{
+			name:      "PTR miss",
+			populate:  map[string]string{},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg { return newQuestion("99.1.168.192.in-addr.arpa.", mdns.TypePTR) },
+			wantRcode:  mdns.RcodeNameError,
+		},
+		{
+			name:      "outside allowed networks",
+			populate:  map[string]string{},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg { return newQuestion("8.8.8.8.in-addr.arpa.", mdns.TypePTR) },
+			wantRcode:  mdns.RcodeRefused,
+		},
+		{
+			name:      "non PTR type",
+			populate:  map[string]string{},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg { return newQuestion("example.com.", mdns.TypeA) },
+			wantRcode:  mdns.RcodeRefused,
+		},
+		{
+			name:      "non IN class",
+			populate:  map[string]string{},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg {
+				q := newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR)
+				q.Question[0].Qclass = mdns.ClassCHAOS
+				return q
+			},
+			wantRcode: mdns.RcodeRefused,
+		},
+		{
+			name:      "malformed PTR name",
+			populate:  map[string]string{},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg { return newQuestion("not.a.valid.in-addr.arpa.", mdns.TypePTR) },
+			wantRcode:  mdns.RcodeFormatError,
+		},
+		{
+			name:      "empty question",
+			populate:  map[string]string{},
+			networks:   []string{"192.168.0.0/16"},
+			question:   func() *mdns.Msg { m := new(mdns.Msg); m.Id = 1; return m },
+			wantRcode:  mdns.RcodeFormatError,
+		},
 	}
-	if w.msg.Rcode != mdns.RcodeSuccess {
-		t.Errorf("Rcode = %d, want NOERROR", w.msg.Rcode)
-	}
-	if len(w.msg.Answer) != 1 {
-		t.Fatalf("answers = %d", len(w.msg.Answer))
-	}
-	ptr, ok := w.msg.Answer[0].(*mdns.PTR)
-	if !ok {
-		t.Fatalf("answer not PTR: %T", w.msg.Answer[0])
-	}
-	if ptr.Ptr != "laptop.lan." {
-		t.Errorf("Ptr = %q", ptr.Ptr)
-	}
-	if ptr.Hdr.Ttl != 300 {
-		t.Errorf("Ttl = %d", ptr.Hdr.Ttl)
-	}
-}
 
-func TestHandler_PTRHit_IPv6(t *testing.T) {
-	h := newHandler(t,
-		map[string]string{"fd00::1": "router.lan."},
-		[]string{"fd00::/8"},
-	)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandler(t, tt.populate, tt.networks)
+			w := &recWriter{}
+			h.ServeDNS(w, tt.question())
 
-	qname, _ := mdns.ReverseAddr("fd00::1")
-	w := &recWriter{}
-	h.ServeDNS(w, newQuestion(qname, mdns.TypePTR))
+			assert.Equal(t, tt.wantRcode, w.msg.Rcode)
 
-	if w.msg.Rcode != mdns.RcodeSuccess {
-		t.Errorf("Rcode = %d", w.msg.Rcode)
-	}
-	if len(w.msg.Answer) != 1 {
-		t.Fatalf("answers = %d", len(w.msg.Answer))
-	}
-	ptr := w.msg.Answer[0].(*mdns.PTR)
-	if ptr.Ptr != "router.lan." {
-		t.Errorf("Ptr = %q", ptr.Ptr)
-	}
-}
-
-func TestHandler_PTRMiss(t *testing.T) {
-	h := newHandler(t, map[string]string{}, []string{"192.168.0.0/16"})
-
-	w := &recWriter{}
-	h.ServeDNS(w, newQuestion("99.1.168.192.in-addr.arpa.", mdns.TypePTR))
-
-	if w.msg.Rcode != mdns.RcodeNameError {
-		t.Errorf("Rcode = %d, want NXDOMAIN", w.msg.Rcode)
-	}
-	if len(w.msg.Answer) != 0 {
-		t.Errorf("expected no answers, got %d", len(w.msg.Answer))
-	}
-}
-
-func TestHandler_OutsideAllowedNetworks(t *testing.T) {
-	h := newHandler(t, map[string]string{}, []string{"192.168.0.0/16"})
-
-	w := &recWriter{}
-	h.ServeDNS(w, newQuestion("8.8.8.8.in-addr.arpa.", mdns.TypePTR))
-
-	if w.msg.Rcode != mdns.RcodeRefused {
-		t.Errorf("Rcode = %d, want REFUSED", w.msg.Rcode)
-	}
-}
-
-func TestHandler_NonPTRType(t *testing.T) {
-	h := newHandler(t, map[string]string{}, []string{"192.168.0.0/16"})
-
-	w := &recWriter{}
-	h.ServeDNS(w, newQuestion("example.com.", mdns.TypeA))
-
-	if w.msg.Rcode != mdns.RcodeRefused {
-		t.Errorf("Rcode = %d, want REFUSED", w.msg.Rcode)
-	}
-}
-
-func TestHandler_NonINClass(t *testing.T) {
-	h := newHandler(t, map[string]string{}, []string{"192.168.0.0/16"})
-
-	q := newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR)
-	q.Question[0].Qclass = mdns.ClassCHAOS
-
-	w := &recWriter{}
-	h.ServeDNS(w, q)
-
-	if w.msg.Rcode != mdns.RcodeRefused {
-		t.Errorf("Rcode = %d, want REFUSED", w.msg.Rcode)
-	}
-}
-
-func TestHandler_MalformedPTRName(t *testing.T) {
-	h := newHandler(t, map[string]string{}, []string{"192.168.0.0/16"})
-
-	w := &recWriter{}
-	h.ServeDNS(w, newQuestion("not.a.valid.in-addr.arpa.", mdns.TypePTR))
-
-	if w.msg.Rcode != mdns.RcodeFormatError {
-		t.Errorf("Rcode = %d, want FORMERR", w.msg.Rcode)
-	}
-}
-
-func TestHandler_EmptyQuestion(t *testing.T) {
-	h := newHandler(t, map[string]string{}, []string{"192.168.0.0/16"})
-
-	w := &recWriter{}
-	m := new(mdns.Msg)
-	m.Id = 1
-	h.ServeDNS(w, m)
-
-	if w.msg.Rcode != mdns.RcodeFormatError {
-		t.Errorf("Rcode = %d, want FORMERR", w.msg.Rcode)
+			// Verify PTR-specific assertions for successful PTR lookups
+			if tt.wantPTR != "" {
+				require.Len(t, w.msg.Answer, 1, "expected exactly one answer for PTR hit")
+				ptr, ok := w.msg.Answer[0].(*mdns.PTR)
+				require.True(t, ok, "answer should be PTR type")
+				assert.Equal(t, tt.wantPTR, ptr.Ptr)
+				if tt.wantTTL > 0 {
+					assert.Equal(t, tt.wantTTL, ptr.Hdr.Ttl)
+				}
+			} else {
+				assert.Empty(t, w.msg.Answer)
+			}
+		})
 	}
 }
 
@@ -180,16 +158,12 @@ func TestHandler_ReturnsServfailUntilReady(t *testing.T) {
 
 	w := &recWriter{}
 	h.ServeDNS(w, newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR))
-	if w.msg.Rcode != mdns.RcodeServerFailure {
-		t.Errorf("before ready: Rcode = %d, want SERVFAIL", w.msg.Rcode)
-	}
+	assert.Equal(t, mdns.RcodeServerFailure, w.msg.Rcode, "before ready")
 
 	h.MarkReady()
 	w = &recWriter{}
 	h.ServeDNS(w, newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR))
-	if w.msg.Rcode != mdns.RcodeNameError {
-		t.Errorf("after ready: Rcode = %d, want NXDOMAIN", w.msg.Rcode)
-	}
+	assert.Equal(t, mdns.RcodeNameError, w.msg.Rcode, "after ready")
 }
 
 func TestHandler_NxDomainHasSOA(t *testing.T) {
@@ -200,17 +174,9 @@ func TestHandler_NxDomainHasSOA(t *testing.T) {
 	w := &recWriter{}
 	h.ServeDNS(w, newQuestion("99.1.168.192.in-addr.arpa.", mdns.TypePTR))
 
-	if w.msg.Rcode != mdns.RcodeNameError {
-		t.Fatalf("Rcode = %d", w.msg.Rcode)
-	}
-	if len(w.msg.Ns) == 0 {
-		t.Fatal("NXDOMAIN response missing SOA in authority")
-	}
+	assert.Equal(t, mdns.RcodeNameError, w.msg.Rcode)
+	require.NotEmpty(t, w.msg.Ns, "NXDOMAIN response should have SOA in authority")
 	soa, ok := w.msg.Ns[0].(*mdns.SOA)
-	if !ok {
-		t.Fatalf("authority[0] = %T, want *SOA", w.msg.Ns[0])
-	}
-	if soa.Minttl == 0 {
-		t.Error("SOA MinTTL should be > 0 for negative caching")
-	}
+	require.True(t, ok, "authority[0] should be *SOA")
+	assert.Greater(t, soa.Minttl, uint32(0), "SOA MinTTL should be > 0 for negative caching")
 }

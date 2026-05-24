@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	ipv4Suffix = "in-addr.arpa"
-	ipv6Suffix = "ip6.arpa"
+	ipv4Suffix = ".in-addr.arpa"
+	ipv6Suffix = ".ip6.arpa"
 )
 
 // AddrFromPTR parses a PTR query name (e.g. "42.1.168.192.in-addr.arpa.")
@@ -23,10 +23,10 @@ func AddrFromPTR(qname string) (netip.Addr, error) {
 	name := strings.ToLower(strings.TrimSuffix(qname, "."))
 
 	switch {
-	case strings.HasSuffix(name, "."+ipv4Suffix):
-		return parseIPv4Arpa(strings.TrimSuffix(name, "."+ipv4Suffix))
-	case strings.HasSuffix(name, "."+ipv6Suffix):
-		return parseIPv6Arpa(strings.TrimSuffix(name, "."+ipv6Suffix))
+	case strings.HasSuffix(name, ipv4Suffix):
+		return parseIPv4Arpa(strings.TrimSuffix(name, ipv4Suffix))
+	case strings.HasSuffix(name, ipv6Suffix):
+		return parseIPv6Arpa(strings.TrimSuffix(name, ipv6Suffix))
 	default:
 		return netip.Addr{}, fmt.Errorf("not an arpa name: %q", qname)
 	}
@@ -37,18 +37,15 @@ func parseIPv4Arpa(prefix string) (netip.Addr, error) {
 	if len(labels) != 4 {
 		return netip.Addr{}, fmt.Errorf("ipv4 arpa: expected 4 labels, got %d", len(labels))
 	}
-	var octets [4]byte
+	var bytes [4]byte
 	for i, l := range labels {
-		n, err := strconv.Atoi(l)
+		n, err := strconv.ParseUint(l, 10, 8)
 		if err != nil {
 			return netip.Addr{}, fmt.Errorf("ipv4 arpa: label %q: %w", l, err)
 		}
-		if n < 0 || n > 255 {
-			return netip.Addr{}, fmt.Errorf("ipv4 arpa: octet %d out of range", n)
-		}
-		octets[3-i] = byte(n)
+		bytes[3-i] = byte(n)
 	}
-	return netip.AddrFrom4(octets), nil
+	return netip.AddrFrom4(bytes), nil
 }
 
 func parseIPv6Arpa(prefix string) (netip.Addr, error) {

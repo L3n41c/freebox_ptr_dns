@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"testing"
+	"time"
 
 	mdns "github.com/miekg/dns"
 
@@ -42,7 +43,7 @@ func newHandler(t *testing.T, populate map[string]string, networks []string) *Ha
 	for _, n := range networks {
 		nets = append(nets, netip.MustParsePrefix(n))
 	}
-	h := NewHandler(cache, 300, nets)
+	h := NewHandler(cache, 300*time.Second, nets)
 	h.MarkReady()
 	return h
 }
@@ -175,7 +176,7 @@ func TestHandler_ReturnsServfailUntilReady(t *testing.T) {
 	// NXDOMAIN — we have no data, so SERVFAIL is the honest answer.
 	cache := hosts.NewCache()
 	nets := []netip.Prefix{netip.MustParsePrefix("192.168.0.0/16")}
-	h := NewHandler(cache, 300, nets)
+	h := NewHandler(cache, 300*time.Second, nets)
 
 	w := &recWriter{}
 	h.ServeDNS(w, newQuestion("42.1.168.192.in-addr.arpa.", mdns.TypePTR))

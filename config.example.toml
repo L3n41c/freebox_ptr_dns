@@ -32,10 +32,11 @@ insecure_http = false
 # for local Pi-hole only, etc.
 listen           = "0.0.0.0:53"
 
-# TTL (seconds) returned in PTR answers. A short value keeps things fresh
-# while remaining safe: Pi-hole only re-resolves clients it has not seen
-# in a long time, so a short TTL is essentially free.
-ttl_seconds      = 300
+# TTL returned in PTR answers. A short value keeps things fresh while
+# remaining safe: Pi-hole only re-resolves clients it has not seen in a
+# long time, so a short TTL is essentially free.
+# Accepts any Go duration format: "300s", "5m", "1h", etc.
+ttl             = "5m"
 
 # Suffix appended to host names in PTR responses. Empty disables the suffix.
 local_domain     = "lan"
@@ -53,7 +54,9 @@ allowed_networks = [
 
 [poller]
 # How often to refresh the host list from the Freebox.
-interval_seconds     = 30
+# Accepts any Go duration format: "30s", "1m", "5m", etc.
+interval         = "30s"
 
 # Timeout for each HTTP request to the Freebox.
-http_timeout_seconds = 5
+# Accepts any Go duration format.
+http_timeout     = "5s"

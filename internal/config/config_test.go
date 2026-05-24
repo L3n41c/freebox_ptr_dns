@@ -4,24 +4,34 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o600), "write config file")
 	return p
 }
 
-func TestLoad_FullConfig(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+func TestLoad(t *testing.T) {
+	cases := []struct {
+		name          string
+		config        string
+		filePath      string
+		wantErr       bool
+		wantErrSubstr string
+		expected      *Config
+	}{
+		// === SUCCESS CASES ===
+		{
+			name: "full config",
+			config: `[freebox]
 api_domain   = "mafreebox.freebox.fr"
 app_id       = "fr.test.app"
 app_name     = "Test App"
@@ -37,118 +47,124 @@ allowed_networks = ["192.168.0.0/16", "fd00::/8"]
 
 [poller]
 interval         = "45s"
-http_timeout     = "10s"
-`)
-
-	cfg, err := Load(p)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	if cfg.Freebox.APIDomain != "mafreebox.freebox.fr" {
-		t.Errorf("APIDomain = %q", cfg.Freebox.APIDomain)
-	}
-	if cfg.Freebox.AppID != "fr.test.app" {
-		t.Errorf("AppID = %q", cfg.Freebox.AppID)
-	}
-	if cfg.Freebox.AppName != "Test App" {
-		t.Errorf("AppName = %q", cfg.Freebox.AppName)
-	}
-	if cfg.Freebox.AppVersion != "1.2" {
-		t.Errorf("AppVersion = %q", cfg.Freebox.AppVersion)
-	}
-	if cfg.Freebox.DeviceName != "test-host" {
-		t.Errorf("DeviceName = %q", cfg.Freebox.DeviceName)
-	}
-	if cfg.Freebox.TokenPath != "/var/lib/test/token" {
-		t.Errorf("TokenPath = %q", cfg.Freebox.TokenPath)
-	}
-	if cfg.DNS.Listen != "127.0.0.1:5353" {
-		t.Errorf("Listen = %q", cfg.DNS.Listen)
-	}
-	if cfg.DNS.TTL != 10*time.Minute {
-		t.Errorf("TTL = %v", cfg.DNS.TTL)
-	}
-	if cfg.DNS.LocalDomain != LocalDomain("home") {
-		t.Errorf("LocalDomain = %q", cfg.DNS.LocalDomain)
-	}
-	if len(cfg.DNS.AllowedNetworks) != 2 {
-		t.Fatalf("AllowedNetworks len = %d", len(cfg.DNS.AllowedNetworks))
-	}
-	if cfg.DNS.AllowedNetworks[0] != netip.MustParsePrefix("192.168.0.0/16") {
-		t.Errorf("AllowedNetworks[0] = %v", cfg.DNS.AllowedNetworks[0])
-	}
-	if cfg.DNS.AllowedNetworks[1] != netip.MustParsePrefix("fd00::/8") {
-		t.Errorf("AllowedNetworks[1] = %v", cfg.DNS.AllowedNetworks[1])
-	}
-	if cfg.Poller.Interval != 45*time.Second {
-		t.Errorf("Interval = %v", cfg.Poller.Interval)
-	}
-	if cfg.Poller.HTTPTimeout != 10*time.Second {
-		t.Errorf("HTTPTimeout = %v", cfg.Poller.HTTPTimeout)
-	}
-}
-
-func TestLoad_AppliesDefaults(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+http_timeout     = "10s"`,
+			wantErr: false,
+			expected: &Config{
+				Freebox: Freebox{
+					APIDomain:  "mafreebox.freebox.fr",
+					AppID:      "fr.test.app",
+					AppName:    "Test App",
+					AppVersion: "1.2",
+					DeviceName: "test-host",
+					TokenPath:  "/var/lib/test/token",
+				},
+				DNS: DNS{
+					Listen:      "127.0.0.1:5353",
+					TTL:         10 * time.Minute,
+					LocalDomain: LocalDomain("home"),
+					AllowedNetworks: []netip.Prefix{
+						netip.MustParsePrefix("192.168.0.0/16"),
+						netip.MustParsePrefix("fd00::/8"),
+					},
+				},
+				Poller: Poller{
+					Interval:    45 * time.Second,
+					HTTPTimeout: 10 * time.Second,
+				},
+			},
+		},
+		{
+			name: "applies defaults",
+			config: `[freebox]
 app_id      = "fr.test.app"
 app_name    = "Test App"
 app_version = "1.0"
 device_name = "host"
-token_path  = "/tmp/token"
-`)
+token_path  = "/tmp/token"`,
+			wantErr: false,
+			expected: &Config{
+				Freebox: Freebox{
+					APIDomain:  "mafreebox.freebox.fr",
+					AppID:      "fr.test.app",
+					AppName:    "Test App",
+					AppVersion: "1.0",
+					DeviceName: "host",
+					TokenPath:  "/tmp/token",
+				},
+				DNS: DNS{
+					Listen:      "0.0.0.0:53",
+					TTL:         5 * time.Minute,
+					LocalDomain: LocalDomain("lan"),
+					AllowedNetworks: []netip.Prefix{
+						netip.MustParsePrefix("10.0.0.0/8"),
+						netip.MustParsePrefix("172.16.0.0/12"),
+						netip.MustParsePrefix("192.168.0.0/16"),
+						netip.MustParsePrefix("fc00::/7"),
+						netip.MustParsePrefix("fe80::/10"),
+					},
+				},
+				Poller: Poller{
+					Interval:    30 * time.Second,
+					HTTPTimeout: 5 * time.Second,
+				},
+			},
+		},
+		{
+			name: "explicit empty local domain honored",
+			config: `[freebox]
+app_id="x"
+app_name="x"
+app_version="1"
+device_name="x"
+token_path="/tmp/t"
 
-	cfg, err := Load(p)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
+[dns]
+local_domain = ""`,
+			wantErr: false,
+			expected: &Config{
+				Freebox: Freebox{
+					APIDomain:  "mafreebox.freebox.fr",
+					AppID:      "x",
+					AppName:    "x",
+					AppVersion: "1",
+					DeviceName: "x",
+					TokenPath:  "/tmp/t",
+				},
+				DNS: DNS{
+					Listen:      "0.0.0.0:53",
+					TTL:         5 * time.Minute,
+					LocalDomain: LocalDomain(""),
+					AllowedNetworks: []netip.Prefix{
+						netip.MustParsePrefix("10.0.0.0/8"),
+						netip.MustParsePrefix("172.16.0.0/12"),
+						netip.MustParsePrefix("192.168.0.0/16"),
+						netip.MustParsePrefix("fc00::/7"),
+						netip.MustParsePrefix("fe80::/10"),
+					},
+				},
+				Poller: Poller{
+					Interval:    30 * time.Second,
+					HTTPTimeout: 5 * time.Second,
+				},
+			},
+		},
 
-	if cfg.Freebox.APIDomain != "mafreebox.freebox.fr" {
-		t.Errorf("default APIDomain = %q", cfg.Freebox.APIDomain)
-	}
-	if cfg.DNS.Listen != "0.0.0.0:53" {
-		t.Errorf("default Listen = %q", cfg.DNS.Listen)
-	}
-	if cfg.DNS.TTL != 5*time.Minute {
-		t.Errorf("default TTL = %v", cfg.DNS.TTL)
-	}
-	if cfg.DNS.LocalDomain != LocalDomain("lan") {
-		t.Errorf("default LocalDomain = %q", cfg.DNS.LocalDomain)
-	}
-	if len(cfg.DNS.AllowedNetworks) != 5 {
-		t.Errorf("default AllowedNetworks len = %d, want 5", len(cfg.DNS.AllowedNetworks))
-	}
-	if cfg.Poller.Interval != 30*time.Second {
-		t.Errorf("default Interval = %v", cfg.Poller.Interval)
-	}
-	if cfg.Poller.HTTPTimeout != 5*time.Second {
-		t.Errorf("default HTTPTimeout = %v", cfg.Poller.HTTPTimeout)
-	}
-}
-
-func TestLoad_RejectsUnknownKeys(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+		// === ERROR CASES ===
+		{
+			name: "rejects unknown keys",
+			config: `[freebox]
 app_id      = "x"
 app_name    = "x"
 app_version = "1"
 device_name = "x"
 token_path  = "/tmp/t"
-unknown_key = "oops"
-`)
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected error for unknown key")
-	}
-	if !strings.Contains(err.Error(), "unknown_key") {
-		t.Errorf("error should mention unknown_key: %v", err)
-	}
-}
-
-func TestLoad_RejectsInvalidCIDR(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+unknown_key = "oops"`,
+			wantErr:       true,
+			wantErrSubstr: "unknown_key",
+		},
+		{
+			name: "rejects invalid CIDR",
+			config: `[freebox]
 app_id      = "x"
 app_name    = "x"
 app_version = "1"
@@ -156,56 +172,43 @@ device_name = "x"
 token_path  = "/tmp/t"
 
 [dns]
-allowed_networks = ["not-a-cidr"]
-`)
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected error for invalid CIDR")
-	}
-	if !strings.Contains(err.Error(), "allowed_networks") {
-		t.Errorf("error should mention allowed_networks: %v", err)
-	}
-}
-
-func TestLoad_RejectsMissingRequired(t *testing.T) {
-	cases := []struct {
-		name    string
-		content string
-		missing string
-	}{
-		{"app_id", `[freebox]
+allowed_networks = ["not-a-cidr"]`,
+			wantErr:       true,
+			wantErrSubstr: "allowed_networks",
+		},
+		{
+			name: "rejects missing app_id",
+			config: `[freebox]
 app_name="x"
 app_version="1"
 device_name="x"
-token_path="/tmp/t"`, "app_id"},
-		{"app_name", `[freebox]
+token_path="/tmp/t"`,
+			wantErr:       true,
+			wantErrSubstr: "app_id",
+		},
+		{
+			name: "rejects missing app_name",
+			config: `[freebox]
 app_id="x"
 app_version="1"
 device_name="x"
-token_path="/tmp/t"`, "app_name"},
-		{"token_path", `[freebox]
+token_path="/tmp/t"`,
+			wantErr:       true,
+			wantErrSubstr: "app_name",
+		},
+		{
+			name: "rejects missing token_path",
+			config: `[freebox]
 app_id="x"
 app_name="x"
 app_version="1"
-device_name="x"`, "token_path"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			p := writeConfig(t, tc.content)
-			_, err := Load(p)
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if !strings.Contains(err.Error(), tc.missing) {
-				t.Errorf("error should mention %s: %v", tc.missing, err)
-			}
-		})
-	}
-}
-
-func TestLoad_RejectsZeroDurations(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+device_name="x"`,
+			wantErr:       true,
+			wantErrSubstr: "token_path",
+		},
+		{
+			name: "rejects zero durations",
+			config: `[freebox]
 app_id="x"
 app_name="x"
 app_version="1"
@@ -213,20 +216,13 @@ device_name="x"
 token_path="/tmp/t"
 
 [dns]
-ttl = "0s"
-`)
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected error for ttl = 0")
-	}
-	if !strings.Contains(err.Error(), "ttl") {
-		t.Errorf("error should mention ttl: %v", err)
-	}
-}
-
-func TestLoad_RejectsBadListen(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+ttl = "0s"`,
+			wantErr:       true,
+			wantErrSubstr: "ttl",
+		},
+		{
+			name: "rejects bad listen",
+			config: `[freebox]
 app_id="x"
 app_name="x"
 app_version="1"
@@ -234,64 +230,29 @@ device_name="x"
 token_path="/tmp/t"
 
 [dns]
-listen = "no-port-here"
-`)
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected error for bad listen")
-	}
-}
-
-func TestLoad_FileNotFound(t *testing.T) {
-	_, err := Load("/nonexistent/path/config.toml")
-	if err == nil {
-		t.Fatal("expected error for missing file")
-	}
-}
-
-func TestLoad_ExplicitEmptyLocalDomainHonored(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
-token_path="/tmp/t"
-
-[dns]
-local_domain = ""
-`)
-	cfg, err := Load(p)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.DNS.LocalDomain != LocalDomain("") {
-		t.Errorf("LocalDomain = %q, want empty (user opted out)", cfg.DNS.LocalDomain)
-	}
-}
-
-func TestLoad_RejectsEmptyAPIDomain(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+listen = "no-port-here"`,
+			wantErr: true,
+		},
+		{
+			name:     "file not found",
+			filePath: "/nonexistent/path/config.toml",
+			wantErr:  true,
+		},
+		{
+			name: "rejects empty api_domain",
+			config: `[freebox]
 api_domain = ""
 app_id="x"
 app_name="x"
 app_version="1"
 device_name="x"
-token_path="/tmp/t"
-`)
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected error for empty api_domain")
-	}
-	if !strings.Contains(err.Error(), "api_domain") {
-		t.Errorf("error should mention api_domain: %v", err)
-	}
-}
-
-func TestLoad_RejectsEmptyAllowedNetworks(t *testing.T) {
-	p := writeConfig(t, `
-[freebox]
+token_path="/tmp/t"`,
+			wantErr:       true,
+			wantErrSubstr: "api_domain",
+		},
+		{
+			name: "rejects empty allowed_networks",
+			config: `[freebox]
 app_id="x"
 app_name="x"
 app_version="1"
@@ -299,14 +260,33 @@ device_name="x"
 token_path="/tmp/t"
 
 [dns]
-allowed_networks = []
-`)
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected error for explicit empty allowed_networks")
+allowed_networks = []`,
+			wantErr:       true,
+			wantErrSubstr: "allowed_networks",
+		},
 	}
-	if !strings.Contains(err.Error(), "allowed_networks") {
-		t.Errorf("error should mention allowed_networks: %v", err)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var path string
+			if tc.filePath != "" {
+				path = tc.filePath
+			} else {
+				path = writeConfig(t, tc.config)
+			}
+
+			cfg, err := Load(path)
+
+			if tc.wantErr {
+				require.Error(t, err, "expected error")
+				if tc.wantErrSubstr != "" {
+					assert.Contains(t, err.Error(), tc.wantErrSubstr)
+				}
+			} else {
+				require.NoError(t, err, "unexpected error")
+				assert.Equal(t, tc.expected, cfg)
+			}
+		})
 	}
 }
 
@@ -320,6 +300,7 @@ token_path="/tmp/t"
 
 [dns]
 `
+
 	cases := []struct {
 		name    string
 		domain  string
@@ -334,16 +315,18 @@ token_path="/tmp/t"
 		{"empty label", `"home..lan"`, true},
 		{"unicode", `"café"`, true},
 	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := writeConfig(t, header+`local_domain = `+tc.domain)
+			p := writeConfig(t, header+"local_domain = "+tc.domain)
 			_, err := Load(p)
-			if tc.wantErr && err == nil {
-				t.Fatalf("expected error for domain=%s", tc.domain)
+
+			if tc.wantErr {
+				require.Error(t, err, "expected error for domain=%s", tc.domain)
+				return
 			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("unexpected error for domain=%s: %v", tc.domain, err)
-			}
+
+			require.NoError(t, err, "unexpected error for domain=%s: %v", tc.domain, err)
 		})
 	}
 }

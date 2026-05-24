@@ -150,8 +150,8 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("dns.local_domain invalid: %w", err)
 	}
 
-	// Ensure AllowedNetworks is not empty if the key was present
-	// (an empty list would disable the safety net)
+	// Ensure AllowedNetworks is not empty (omit the key to use defaults;
+	// an empty list would disable the safety net)
 	if len(cfg.DNS.AllowedNetworks) == 0 {
 		return errors.New("dns.allowed_networks must be non-empty " +
 			"(omit the key to use the defaults; an empty list would disable the safety net)")

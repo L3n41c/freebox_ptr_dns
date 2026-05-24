@@ -20,8 +20,8 @@ type Handler struct {
 	ready   atomic.Bool
 }
 
-func NewHandler(cache *hosts.Cache, ttl uint32, allowed []netip.Prefix) *Handler {
-	return &Handler{cache: cache, ttl: ttl, allowed: allowed}
+func NewHandler(cache *hosts.Cache, ttl time.Duration, allowed []netip.Prefix) *Handler {
+	return &Handler{cache: cache, ttl: uint32(ttl.Seconds()), allowed: allowed}
 }
 
 // MarkReady declares that the cache has been populated at least once. Before

@@ -110,10 +110,10 @@ func run(configPath string) error {
 	client.SetAppToken(token)
 
 	cache := hosts.NewCache()
-	handler := dns.NewHandler(cache, uint32(cfg.DNS.TTLSeconds), cfg.DNS.AllowedNetworks)
+	handler := dns.NewHandler(cache, cfg.DNS.TTL, cfg.DNS.AllowedNetworks)
 	server := dns.NewServer(cfg.DNS.Listen, handler)
 
-	poller := hosts.NewPoller(client, cache, cfg.DNS.LocalDomain, cfg.Poller.Interval)
+	poller := hosts.NewPoller(client, cache, cfg.DNS.LocalDomain.String(), cfg.Poller.Interval)
 	poller.OnRefreshSuccess = handler.MarkReady
 
 	// Refresh once before opening the DNS port so we never serve authoritative

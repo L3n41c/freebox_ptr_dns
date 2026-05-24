@@ -31,13 +31,13 @@ token_path   = "/var/lib/test/token"
 
 [dns]
 listen           = "127.0.0.1:5353"
-ttl_seconds      = 600
+ttl              = "10m"
 local_domain     = "home"
 allowed_networks = ["192.168.0.0/16", "fd00::/8"]
 
 [poller]
-interval_seconds     = 45
-http_timeout_seconds = 10
+interval         = "45s"
+http_timeout     = "10s"
 `)
 
 	cfg, err := Load(p)
@@ -66,10 +66,10 @@ http_timeout_seconds = 10
 	if cfg.DNS.Listen != "127.0.0.1:5353" {
 		t.Errorf("Listen = %q", cfg.DNS.Listen)
 	}
-	if cfg.DNS.TTL != 600*time.Second {
+	if cfg.DNS.TTL != 10*time.Minute {
 		t.Errorf("TTL = %v", cfg.DNS.TTL)
 	}
-	if cfg.DNS.LocalDomain != "home" {
+	if cfg.DNS.LocalDomain != LocalDomain("home") {
 		t.Errorf("LocalDomain = %q", cfg.DNS.LocalDomain)
 	}
 	if len(cfg.DNS.AllowedNetworks) != 2 {
@@ -110,11 +110,14 @@ token_path  = "/tmp/token"
 	if cfg.DNS.Listen != "0.0.0.0:53" {
 		t.Errorf("default Listen = %q", cfg.DNS.Listen)
 	}
-	if cfg.DNS.TTL != 300*time.Second {
+	if cfg.DNS.TTL != 5*time.Minute {
 		t.Errorf("default TTL = %v", cfg.DNS.TTL)
 	}
-	if cfg.DNS.LocalDomain != "lan" {
+	if cfg.DNS.LocalDomain != LocalDomain("lan") {
 		t.Errorf("default LocalDomain = %q", cfg.DNS.LocalDomain)
+	}
+	if len(cfg.DNS.AllowedNetworks) != 5 {
+		t.Errorf("default AllowedNetworks len = %d, want 5", len(cfg.DNS.AllowedNetworks))
 	}
 	if cfg.Poller.Interval != 30*time.Second {
 		t.Errorf("default Interval = %v", cfg.Poller.Interval)
@@ -210,14 +213,14 @@ device_name="x"
 token_path="/tmp/t"
 
 [dns]
-ttl_seconds = 0
+ttl = "0s"
 `)
 	_, err := Load(p)
 	if err == nil {
-		t.Fatal("expected error for ttl_seconds = 0")
+		t.Fatal("expected error for ttl = 0")
 	}
-	if !strings.Contains(err.Error(), "ttl_seconds") {
-		t.Errorf("error should mention ttl_seconds: %v", err)
+	if !strings.Contains(err.Error(), "ttl") {
+		t.Errorf("error should mention ttl: %v", err)
 	}
 }
 
@@ -262,7 +265,7 @@ local_domain = ""
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.DNS.LocalDomain != "" {
+	if cfg.DNS.LocalDomain != LocalDomain("") {
 		t.Errorf("LocalDomain = %q, want empty (user opted out)", cfg.DNS.LocalDomain)
 	}
 }

@@ -28,39 +28,73 @@ type Freebox struct {
 	InsecureHTTP bool   `toml:"insecure_http"` // opt-in: send tokens over plain HTTP
 }
 
+// LocalDomain is a local DNS domain for PTR record suffixes.
+type LocalDomain string
+
+// String implements fmt.Stringer to provide a string representation.
+func (d LocalDomain) String() string {
+	return string(d)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler to validate the domain.
+func (d *LocalDomain) UnmarshalText(text []byte) error {
+	*d = LocalDomain(text)
+	return validateLocalDomain(string(*d))
+}
+
 type DNS struct {
 	Listen          string         `toml:"listen"`
-	TTLSeconds      int            `toml:"ttl_seconds"`
-	LocalDomain     string         `toml:"local_domain"`
-	AllowedNetworks []netip.Prefix `toml:"-"`
-	AllowedNetRaw   []string       `toml:"allowed_networks"`
-	TTL             time.Duration  `toml:"-"`
+	TTL             time.Duration  `toml:"ttl"`
+	LocalDomain     LocalDomain    `toml:"local_domain"`
+	AllowedNetworks []netip.Prefix `toml:"allowed_networks"`
 }
 
 type Poller struct {
-	IntervalSeconds    int           `toml:"interval_seconds"`
-	HTTPTimeoutSeconds int           `toml:"http_timeout_seconds"`
-	Interval           time.Duration `toml:"-"`
-	HTTPTimeout        time.Duration `toml:"-"`
+	Interval    time.Duration `toml:"interval"`
+	HTTPTimeout time.Duration `toml:"http_timeout"`
 }
 
 func Load(path string) (*Config, error) {
+	// 1. Create a config with all default values
+	cfg := &Config{
+		Freebox: Freebox{
+			APIDomain: "mafreebox.freebox.fr",
+		},
+		DNS: DNS{
+			Listen:      "0.0.0.0:53",
+			TTL:         5 * time.Minute,
+			LocalDomain: LocalDomain("lan"),
+			AllowedNetworks: []netip.Prefix{
+				netip.MustParsePrefix("10.0.0.0/8"),
+				netip.MustParsePrefix("172.16.0.0/12"),
+				netip.MustParsePrefix("192.168.0.0/16"),
+				netip.MustParsePrefix("fc00::/7"),
+				netip.MustParsePrefix("fe80::/10"),
+			},
+		},
+		Poller: Poller{
+			Interval:    30 * time.Second,
+			HTTPTimeout: 5 * time.Second,
+		},
+	}
+
+	// 2. Read the config file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	var cfg Config
-	md, err := toml.Decode(string(data), &cfg)
+	// 3. Decode the file.
+	// BurntSushi/toml will:
+	// - Overwrite fields present in the file
+	// - Keep default values for missing fields
+	// - Automatically handle time.Duration and []netip.Prefix via UnmarshalText
+	md, err := toml.Decode(string(data), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
-	if md.IsDefined("dns", "allowed_networks") && len(cfg.DNS.AllowedNetRaw) == 0 {
-		return nil, errors.New("dns.allowed_networks must be non-empty " +
-			"(omit the key to use the defaults; an empty list would disable the safety net)")
-	}
-
+	// 4. Check for unknown keys
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
@@ -69,46 +103,16 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config has unknown keys: %v", keys)
 	}
 
-	applyDefaults(&cfg, md)
-
-	if err := validate(&cfg); err != nil {
+	// 5. Validate required fields and constraints
+	if err := validate(cfg); err != nil {
 		return nil, err
 	}
 
-	return &cfg, nil
-}
-
-func applyDefaults(cfg *Config, md toml.MetaData) {
-	if !md.IsDefined("freebox", "api_domain") {
-		cfg.Freebox.APIDomain = "mafreebox.freebox.fr"
-	}
-	if !md.IsDefined("dns", "listen") {
-		cfg.DNS.Listen = "0.0.0.0:53"
-	}
-	if !md.IsDefined("dns", "ttl_seconds") {
-		cfg.DNS.TTLSeconds = 300
-	}
-	if !md.IsDefined("dns", "local_domain") {
-		cfg.DNS.LocalDomain = "lan"
-	}
-	if !md.IsDefined("dns", "allowed_networks") {
-		cfg.DNS.AllowedNetRaw = []string{
-			"10.0.0.0/8",
-			"172.16.0.0/12",
-			"192.168.0.0/16",
-			"fc00::/7",
-			"fe80::/10",
-		}
-	}
-	if !md.IsDefined("poller", "interval_seconds") {
-		cfg.Poller.IntervalSeconds = 30
-	}
-	if !md.IsDefined("poller", "http_timeout_seconds") {
-		cfg.Poller.HTTPTimeoutSeconds = 5
-	}
+	return cfg, nil
 }
 
 func validate(cfg *Config) error {
+	// Validate Freebox (all fields required)
 	if cfg.Freebox.APIDomain == "" {
 		return errors.New("freebox.api_domain must be non-empty")
 	}
@@ -128,36 +132,29 @@ func validate(cfg *Config) error {
 		return errors.New("freebox.token_path is required")
 	}
 
-	if cfg.DNS.TTLSeconds <= 0 {
-		return fmt.Errorf("dns.ttl_seconds must be > 0 (got %d)", cfg.DNS.TTLSeconds)
+	// Validate DNS
+	if cfg.DNS.TTL <= 0 {
+		return errors.New("dns.ttl must be > 0")
 	}
-	cfg.DNS.TTL = time.Duration(cfg.DNS.TTLSeconds) * time.Second
 
 	if _, _, err := net.SplitHostPort(cfg.DNS.Listen); err != nil {
 		return fmt.Errorf("dns.listen invalid: %w", err)
 	}
 
-	if err := validateLocalDomain(cfg.DNS.LocalDomain); err != nil {
-		return fmt.Errorf("dns.local_domain: %w", err)
+	// Ensure AllowedNetworks is not empty if the key was present
+	// (an empty list would disable the safety net)
+	if len(cfg.DNS.AllowedNetworks) == 0 {
+		return errors.New("dns.allowed_networks must be non-empty " +
+			"(omit the key to use the defaults; an empty list would disable the safety net)")
 	}
 
-	cfg.DNS.AllowedNetworks = make([]netip.Prefix, 0, len(cfg.DNS.AllowedNetRaw))
-	for _, s := range cfg.DNS.AllowedNetRaw {
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			return fmt.Errorf("dns.allowed_networks: invalid CIDR %q: %w", s, err)
-		}
-		cfg.DNS.AllowedNetworks = append(cfg.DNS.AllowedNetworks, p)
+	// Validate Poller
+	if cfg.Poller.Interval <= 0 {
+		return errors.New("poller.interval must be > 0")
 	}
-
-	if cfg.Poller.IntervalSeconds <= 0 {
-		return errors.New("poller.interval_seconds must be > 0")
+	if cfg.Poller.HTTPTimeout <= 0 {
+		return errors.New("poller.http_timeout must be > 0")
 	}
-	if cfg.Poller.HTTPTimeoutSeconds <= 0 {
-		return errors.New("poller.http_timeout_seconds must be > 0")
-	}
-	cfg.Poller.Interval = time.Duration(cfg.Poller.IntervalSeconds) * time.Second
-	cfg.Poller.HTTPTimeout = time.Duration(cfg.Poller.HTTPTimeoutSeconds) * time.Second
 
 	return nil
 }

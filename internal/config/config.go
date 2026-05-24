@@ -146,6 +146,9 @@ func validate(cfg *Config) error {
 	if _, _, err := net.SplitHostPort(cfg.DNS.Listen); err != nil {
 		return fmt.Errorf("dns.listen invalid: %w", err)
 	}
+	if err := validateLocalDomain(string(cfg.DNS.LocalDomain)); err != nil {
+		return fmt.Errorf("dns.local_domain invalid: %w", err)
+	}
 
 	// Ensure AllowedNetworks is not empty if the key was present
 	// (an empty list would disable the safety net)

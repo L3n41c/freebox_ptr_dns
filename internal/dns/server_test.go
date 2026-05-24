@@ -142,6 +142,8 @@ func TestHandler_ServeDNS(t *testing.T) {
 				if tt.wantTTL > 0 {
 					assert.Equal(t, tt.wantTTL, ptr.Hdr.Ttl)
 				}
+			} else {
+				assert.Empty(t, w.msg.Answer)
 			}
 		})
 	}

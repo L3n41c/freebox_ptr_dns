@@ -133,8 +133,14 @@ func validate(cfg *Config) error {
 	}
 
 	// Validate DNS
-	if cfg.DNS.TTL <= 0 {
-		return errors.New("dns.ttl must be > 0")
+	if cfg.DNS.TTL < time.Second {
+		return errors.New("dns.ttl must be >= 1s")
+	}
+	if cfg.DNS.TTL%time.Second != 0 {
+		return errors.New("dns.ttl must be a whole number of seconds")
+	}
+	if cfg.DNS.TTL/time.Second > time.Duration(^uint32(0)) {
+		return errors.New("dns.ttl must fit in a uint32 number of seconds")
 	}
 
 	if _, _, err := net.SplitHostPort(cfg.DNS.Listen); err != nil {

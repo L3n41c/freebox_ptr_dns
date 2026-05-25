@@ -13,6 +13,7 @@ jobs:
       - run: go mod download
       - run: go vet ./...
       - name: Configure Datadog Test Optimization
+        if: secrets.DD_API_KEY != ''
         uses: datadog/test-visibility-github-action@v2
         with:
           languages: go

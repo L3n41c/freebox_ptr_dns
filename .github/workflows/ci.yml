@@ -12,5 +12,13 @@ jobs:
           cache: true
       - run: go mod download
       - run: go vet ./...
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@v2
+        with:
+          languages: go
+          api_key: ${{ secrets.DD_API_KEY }}
+          site: ${{ vars.DD_SITE }}
       - run: go test -v -race ./...
+        env:
+          JOB_ID: ${{ job.check_run_id }}
       - run: go build -v ./...

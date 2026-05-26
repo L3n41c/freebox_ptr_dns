@@ -13,6 +13,7 @@ jobs:
       - run: go mod download
       - run: go vet ./...
       - name: Configure Datadog Test Optimization
+        if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         uses: datadog/test-visibility-github-action@v2
         with:
           languages: go
@@ -23,6 +24,7 @@ jobs:
         env:
           JOB_ID: ${{ job.check_run_id }}
       - name: Upload coverage to Datadog
+        if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         uses: DataDog/coverage-upload-github-action@v1
         with:
           api_key: ${{ secrets.DD_API_KEY }}

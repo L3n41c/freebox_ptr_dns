@@ -11,14 +11,19 @@ jobs:
   goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout code
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - uses: goreleaser/goreleaser-action@v7
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: '~> v2'

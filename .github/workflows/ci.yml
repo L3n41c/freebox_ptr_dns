@@ -19,7 +19,14 @@ jobs:
           languages: go
           api_key: ${{ secrets.DD_API_KEY }}
           site: ${{ vars.DD_SITE }}
-      - run: go test -v -race ./...
+      - name: Run tests with coverage
+        run: go test -v -race -coverprofile=coverage.out ./...
         env:
           JOB_ID: ${{ job.check_run_id }}
+      - name: Upload coverage to Datadog
+        if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+        uses: DataDog/coverage-upload-github-action@v1
+        with:
+          api_key: ${{ secrets.DD_API_KEY }}
+          site: ${{ vars.DD_SITE }}
       - run: go build -v ./...

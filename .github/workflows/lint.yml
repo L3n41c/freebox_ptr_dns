@@ -42,7 +42,7 @@ jobs:
           cache: true
 
       - name: Install actionlint
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@latest
+        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@latest
 
       - name: Run actionlint
-        run: "$(go env GOPATH)/bin/actionlint"
+        run: "$RUNNER_TEMP/bin/actionlint"

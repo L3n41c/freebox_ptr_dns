@@ -26,9 +26,6 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-      - name: Run govulncheck
-        uses: golang/govulncheck-action@v1
-
       - name: Run go vet
         run: go vet ./...
 
@@ -54,6 +51,13 @@ jobs:
 
       - name: Build project
         run: go build -v ./...
+
+  govulncheck:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
 
   release-snapshot:
     name: Release snapshot

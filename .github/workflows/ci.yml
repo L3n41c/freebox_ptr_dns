@@ -21,6 +21,14 @@ jobs:
       - name: Download Go modules
         run: go mod download
 
+      - name: Check go.mod/go.sum consistency
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Run go vet
         run: go vet ./...
 
@@ -46,3 +54,25 @@ jobs:
 
       - name: Build project
         run: go build -v ./...
+
+  release-snapshot:
+    name: Release snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate release with GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --snapshot --skip=publish --clean

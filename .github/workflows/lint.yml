@@ -27,3 +27,13 @@ jobs:
           version: v2.11
           only-new-issues: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2

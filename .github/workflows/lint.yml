@@ -35,11 +35,5 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Run actionlint
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@latest
+        uses: raven-actions/actionlint@v2

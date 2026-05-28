@@ -35,5 +35,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@latest
+
       - name: Run actionlint
-        uses: rhysd/actionlint@v1
+        run: "$(go env GOPATH)/bin/actionlint"

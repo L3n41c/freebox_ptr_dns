@@ -41,8 +41,5 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install actionlint
-        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@latest
-
       - name: Run actionlint
-        run: "$RUNNER_TEMP/bin/actionlint"
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@latest

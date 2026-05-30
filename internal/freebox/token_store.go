@@ -1,3 +1,7 @@
+// Copyright 2026 Lénaïc Huard
+//
+// Licensed under the MIT License, see LICENSE for details
+
 package freebox
 
 import (

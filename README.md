@@ -1,5 +1,9 @@
 # freebox-ptr-dns
 
+Copyright (c) 2026 Lénaïc Huard
+
+Licensed under the [MIT License](LICENSE).
+
 ![CI](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/ci.yml/badge.svg)
 ![Lint](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/lint.yml/badge.svg)
 ![CodeQL](https://github.com/L3n41c/freebox_ptr_dns/actions/workflows/codeql.yml/badge.svg)

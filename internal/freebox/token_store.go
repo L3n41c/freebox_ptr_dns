@@ -31,13 +31,17 @@ func SaveToken(path, token string) error {
 	if token == "" {
 		return errors.New("refusing to save empty token")
 	}
+
 	dir := filepath.Dir(path)
+
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create parent dir: %w", err)
 	}
+
 	if err := checkParentDir(dir); err != nil {
 		return err
 	}
+
 	if _, err := os.Lstat(path); err == nil {
 		return fmt.Errorf("token file %s already exists; remove it to re-enroll", path)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -46,31 +50,38 @@ func SaveToken(path, token string) error {
 
 	tmp := path + ".tmp"
 	_ = os.Remove(tmp) // best effort: clean up after a previous crash
+
 	// O_NOFOLLOW so a pre-existing symlink at tmp is not silently followed.
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return fmt.Errorf("create token file: %w", err)
 	}
+
 	committed := false
 	defer func() {
 		if !committed {
 			_ = os.Remove(tmp)
 		}
 	}()
+
 	if _, err := f.WriteString(token + "\n"); err != nil {
 		f.Close() //nolint:errcheck
 		return fmt.Errorf("write token: %w", err)
 	}
+
 	if err := f.Sync(); err != nil {
 		f.Close() //nolint:errcheck
 		return fmt.Errorf("sync token: %w", err)
 	}
+
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close token: %w", err)
 	}
+
 	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("rename token: %w", err)
 	}
+
 	committed = true
 	return nil
 }
@@ -83,6 +94,7 @@ func LoadToken(path string) (string, error) {
 	if err := checkParentDir(filepath.Dir(path)); err != nil {
 		return "", err
 	}
+
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return "", err
@@ -109,6 +121,7 @@ func LoadToken(path string) (string, error) {
 	if tok == "" {
 		return "", fmt.Errorf("token file %s is empty", path)
 	}
+
 	return tok, nil
 }
 

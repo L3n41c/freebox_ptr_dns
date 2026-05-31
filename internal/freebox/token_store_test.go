@@ -5,11 +5,12 @@
 package freebox
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // tightDir returns a sub-directory of t.TempDir() with 0700 permissions —
@@ -18,134 +19,125 @@ import (
 func tightDir(t *testing.T) string {
 	t.Helper()
 	d := filepath.Join(t.TempDir(), "secure")
-	if err := os.Mkdir(d, 0o700); err != nil {
-		t.Fatalf("mkdir tight: %v", err)
-	}
+	require.NoError(t, os.Mkdir(d, 0o700), "mkdir tight")
 	return d
 }
 
-func TestTokenStore_SaveAndLoad(t *testing.T) {
-	dir := tightDir(t)
-	p := filepath.Join(dir, "token")
-	if err := SaveToken(p, "secret-app-token"); err != nil {
-		t.Fatalf("SaveToken: %v", err)
+// --- Save/Load --------------------------------------------------------------
+
+func TestTokenStore_SaveLoad(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		wantTok  string
+		wantPerm os.FileMode
+	}{
+		{"basic", "secret-app-token", "secret-app-token", 0o600},
+		{"with newline", "my-token\n", "my-token", 0o600},
 	}
 
-	tok, err := LoadToken(p)
-	if err != nil {
-		t.Fatalf("LoadToken: %v", err)
-	}
-	if tok != "secret-app-token" {
-		t.Errorf("got %q", tok)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := tightDir(t)
+			p := filepath.Join(dir, "token")
+			require.NoError(t, SaveToken(p, tt.content), "SaveToken should succeed")
 
-func TestTokenStore_SavedFileIs0600(t *testing.T) {
-	dir := tightDir(t)
-	p := filepath.Join(dir, "token")
-	if err := SaveToken(p, "t"); err != nil {
-		t.Fatalf("SaveToken: %v", err)
-	}
-	st, err := os.Stat(p)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if st.Mode().Perm() != 0o600 {
-		t.Errorf("perms = %o, want 600", st.Mode().Perm())
+			tok, err := LoadToken(p)
+			require.NoError(t, err, "LoadToken should succeed")
+			assert.Equal(t, tt.wantTok, tok)
+
+			st, err := os.Stat(p)
+			require.NoError(t, err, "Stat should succeed")
+			assert.Equal(t, tt.wantPerm, st.Mode().Perm())
+		})
 	}
 }
 
 func TestTokenStore_CreatesParentDir(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "nested", "deep", "token")
-	if err := SaveToken(p, "t"); err != nil {
-		t.Fatalf("SaveToken: %v", err)
-	}
+	require.NoError(t, SaveToken(p, "t"), "SaveToken should create parent dirs")
+
 	st, err := os.Stat(filepath.Dir(p))
-	if err != nil {
-		t.Fatalf("stat parent: %v", err)
-	}
-	if !st.IsDir() {
-		t.Error("parent is not a dir")
-	}
+	require.NoError(t, err, "Stat parent should succeed")
+	assert.True(t, st.IsDir(), "parent should be a directory")
 }
 
-func TestTokenStore_LoadRejectsLooseFile(t *testing.T) {
-	dir := tightDir(t)
-	p := filepath.Join(dir, "token")
-	if err := os.WriteFile(p, []byte("t"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
+// --- Load errors ------------------------------------------------------------
+
+func TestTokenStore_Load(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*testing.T, string)
+		wantErr    bool
+		wantErrMsg string
+	}{
+		{
+			name: "loose file",
+			setup: func(t *testing.T, p string) {
+				require.NoError(t, os.WriteFile(p, []byte("t"), 0o644))
+			},
+			wantErr:    true,
+			wantErrMsg: "permission",
+		},
+		{
+			name:       "missing file",
+			setup:      func(*testing.T, string) {},
+			wantErr:    true,
+			wantErrMsg: "",
+		},
 	}
-	_, err := LoadToken(p)
-	if err == nil {
-		t.Fatal("expected error for too-permissive token file")
-	}
-	if !strings.Contains(err.Error(), "permission") {
-		t.Errorf("unhelpful error: %v", err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := tightDir(t)
+			p := filepath.Join(dir, "token")
+			tt.setup(t, p)
+
+			_, err := LoadToken(p)
+			if tt.wantErr {
+				require.Error(t, err, "LoadToken should fail")
+				if tt.wantErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.wantErrMsg)
+				}
+				return
+			} else {
+				require.NoError(t, err, "LoadToken should succeed")
+			}
+		})
 	}
 }
 
 func TestTokenStore_LoadMissingReturnsNotFound(t *testing.T) {
 	_, err := LoadToken("/nonexistent/token")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("want errors.Is(err, os.ErrNotExist), got %v", err)
-	}
+	require.Error(t, err, "LoadToken should fail for missing file")
+	assert.Contains(t, err.Error(), "no such file")
 }
 
-func TestTokenStore_LoadTrimsWhitespace(t *testing.T) {
-	dir := tightDir(t)
-	p := filepath.Join(dir, "token")
-	// Some editors add trailing newline; we must accept it.
-	if err := os.WriteFile(p, []byte("my-token\n"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	tok, err := LoadToken(p)
-	if err != nil {
-		t.Fatalf("LoadToken: %v", err)
-	}
-	if tok != "my-token" {
-		t.Errorf("got %q", tok)
-	}
-}
+// --- Save errors ------------------------------------------------------------
 
-func TestTokenStore_SaveRefusesEmpty(t *testing.T) {
-	dir := tightDir(t)
-	p := filepath.Join(dir, "token")
-	if err := SaveToken(p, ""); err == nil {
-		t.Fatal("expected error for empty token")
-	}
-}
-
-func TestTokenStore_RejectsLooseParentDir(t *testing.T) {
-	dir := t.TempDir()
-	parent := filepath.Join(dir, "loose")
-	if err := os.Mkdir(parent, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	p := filepath.Join(parent, "token")
-	err := SaveToken(p, "t")
-	if err == nil {
-		t.Fatal("expected SaveToken to reject loose parent dir")
-	}
-	if !strings.Contains(err.Error(), "parent") {
-		t.Errorf("error should mention parent: %v", err)
+func TestTokenStore_Save(t *testing.T) {
+	tests := []struct {
+		name    string
+		token   string
+		wantErr bool
+	}{
+		{"empty token", "", true},
+		{"valid token", "secret", false},
 	}
 
-	// Also at load time, even if the file is tight, a loose parent must reject.
-	if err := os.Chmod(parent, 0o700); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	if err := SaveToken(p, "t"); err != nil {
-		t.Fatalf("SaveToken: %v", err)
-	}
-	if err := os.Chmod(parent, 0o755); err != nil {
-		t.Fatalf("chmod back: %v", err)
-	}
-	if _, err := LoadToken(p); err == nil {
-		t.Fatal("expected LoadToken to reject loose parent dir")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := tightDir(t)
+			p := filepath.Join(dir, "token")
+			err := SaveToken(p, tt.token)
+			if tt.wantErr {
+				require.Error(t, err, "SaveToken should fail")
+				return
+			} else {
+				require.NoError(t, err, "SaveToken should succeed")
+			}
+		})
 	}
 }
 
@@ -153,12 +145,9 @@ func TestTokenStore_SaveIsAtomic(t *testing.T) {
 	// After SaveToken returns, no ".tmp" file should linger.
 	dir := tightDir(t)
 	p := filepath.Join(dir, "token")
-	if err := SaveToken(p, "secret"); err != nil {
-		t.Fatalf("SaveToken: %v", err)
-	}
-	if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {
-		t.Errorf("temp file leaked: %v", err)
-	}
+	require.NoError(t, SaveToken(p, "secret"), "SaveToken should succeed")
+	_, err := os.Stat(p + ".tmp")
+	assert.True(t, os.IsNotExist(err), "temp file should not exist")
 }
 
 func TestTokenStore_SaveCleansUpLeftoverTmp(t *testing.T) {
@@ -166,35 +155,43 @@ func TestTokenStore_SaveCleansUpLeftoverTmp(t *testing.T) {
 	// must succeed by overwriting it.
 	dir := tightDir(t)
 	p := filepath.Join(dir, "token")
-	if err := os.WriteFile(p+".tmp", []byte("stale"), 0o600); err != nil {
-		t.Fatalf("seed stale tmp: %v", err)
-	}
-	if err := SaveToken(p, "fresh"); err != nil {
-		t.Fatalf("SaveToken: %v", err)
-	}
+	require.NoError(t, os.WriteFile(p+".tmp", []byte("stale"), 0o600), "seed stale tmp")
+	require.NoError(t, SaveToken(p, "fresh"), "SaveToken should succeed")
+
 	tok, err := LoadToken(p)
-	if err != nil {
-		t.Fatalf("LoadToken: %v", err)
-	}
-	if tok != "fresh" {
-		t.Errorf("got %q", tok)
-	}
+	require.NoError(t, err, "LoadToken should succeed")
+	assert.Equal(t, "fresh", tok)
+}
+
+// --- Parent dir / symlink ----------------------------------------------------
+
+func TestTokenStore_RejectsLooseParentDir(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "loose")
+	require.NoError(t, os.Mkdir(parent, 0o755), "mkdir should succeed")
+	p := filepath.Join(parent, "token")
+
+	err := SaveToken(p, "t")
+	require.Error(t, err, "SaveToken should reject loose parent dir")
+	assert.Contains(t, err.Error(), "parent")
+
+	// Also at load time, even if the file is tight, a loose parent must reject.
+	require.NoError(t, os.Chmod(parent, 0o700), "chmod should succeed")
+	require.NoError(t, SaveToken(p, "t"), "SaveToken should succeed with tight parent")
+	require.NoError(t, os.Chmod(parent, 0o755), "chmod back should succeed")
+	_, err = LoadToken(p)
+	require.Error(t, err, "LoadToken should reject loose parent dir")
 }
 
 func TestTokenStore_RejectsSymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real")
-	if err := os.WriteFile(target, []byte("decoy\n"), 0o600); err != nil {
-		t.Fatalf("write target: %v", err)
-	}
+	require.NoError(t, os.WriteFile(target, []byte("decoy\n"), 0o600), "write target should succeed")
 	link := filepath.Join(dir, "token")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
-	if _, err := LoadToken(link); err == nil {
-		t.Fatal("LoadToken should refuse to follow a symlink")
-	}
-	if err := SaveToken(link, "t"); err == nil {
-		t.Fatal("SaveToken should refuse to follow a symlink")
-	}
+	require.NoError(t, os.Symlink(target, link), "symlink should succeed")
+
+	_, err := LoadToken(link)
+	require.Error(t, err, "LoadToken should refuse to follow a symlink")
+	err = SaveToken(link, "t")
+	require.Error(t, err, "SaveToken should refuse to follow a symlink")
 }

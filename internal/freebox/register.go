@@ -27,19 +27,20 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 	}
 
 	var auth authorizeResult
-	err := c.doPlain(ctx, "POST", "/api/v4/login/authorize/", authorizeRequest{
+	if err := c.doPlain(ctx, "POST", "/api/v4/login/authorize/", authorizeRequest{
 		AppID:      c.opt.AppID,
 		AppName:    c.opt.AppName,
 		AppVersion: c.opt.AppVersion,
 		DeviceName: c.opt.DeviceName,
-	}, &auth)
-	if err != nil {
+	}, &auth); err != nil {
 		return "", fmt.Errorf("authorize: %w", err)
 	}
 
 	OnPrompt(c.opt.AppName)
 
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -62,11 +63,11 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 			return "", fmt.Errorf("freebox: unexpected status %q", status)
 		}
 
-		if time.Now().After(deadline) {
-			return "", ErrAuthorizationTimedOut
-		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return "", ErrAuthorizationTimedOut
+			}
 			return "", ctx.Err()
 		case <-ticker.C:
 		}

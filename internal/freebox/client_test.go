@@ -5,6 +5,7 @@
 package freebox
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
@@ -241,7 +242,7 @@ func TestRegister_LocalTimeoutDuringStatusRequest(t *testing.T) {
 	fs.setTrackDelay(200 * time.Millisecond)
 	c := newTestClient(fs, "")
 
-	_, err := c.Register(t.Context(), 10*time.Millisecond, 25*time.Millisecond)
+	_, err := c.Register(context.Background(), 10*time.Millisecond, 25*time.Millisecond)
 	require.ErrorIs(t, err, ErrAuthorizationTimedOut)
 }
 

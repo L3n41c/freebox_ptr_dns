@@ -212,25 +212,25 @@ func TestRegister_PendingThenGranted(t *testing.T) {
 
 func TestSession(t *testing.T) {
 	tests := []struct {
-		name          string
-		setup         func(*fakeServer, *Client)
-		wantToken     string
+		name           string
+		setup          func(*testing.T, *fakeServer, *Client)
+		wantToken      string
 		wantGrantCount int32
 	}{
 		{
-			name:          "refresh",
-			wantToken:     "session-token-1",
+			name:           "refresh",
+			wantToken:      "session-token-1",
 			wantGrantCount: 1,
 		},
 		{
-			name:  "cached",
-			setup: func(fs *fakeServer, c *Client) {
+			name: "cached",
+			setup: func(t *testing.T, fs *fakeServer, c *Client) {
 				for range 4 {
 					_, err := c.sessionToken(t.Context())
 					require.NoError(t, err)
 				}
 			},
-			wantToken:     "session-token-1",
+			wantToken:      "session-token-1",
 			wantGrantCount: 1,
 		},
 	}
@@ -240,7 +240,7 @@ func TestSession(t *testing.T) {
 			fs := newFakeServer(t)
 			c := newTestClient(fs, fs.getAppToken())
 			if tt.setup != nil {
-				tt.setup(fs, c)
+				tt.setup(t, fs, c)
 			}
 
 			tok, err := c.sessionToken(t.Context())

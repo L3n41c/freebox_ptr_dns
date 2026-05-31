@@ -5,12 +5,10 @@
 package freebox
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +16,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeServer is a tiny stand-in for the Freebox API used to drive tests.
@@ -29,15 +30,17 @@ type fakeServer struct {
 	challenge  string
 	token      string // current valid session token
 	appToken   string
-	grants     int32 // sessionRequest invocation count
+	grants     atomic.Int32 // sessionRequest invocation count
 	hostsResp  []LanHost
 	ifaceResp  []LanInterface
 	trackID    int
 	trackState string // "pending", "granted", "denied", "timeout"
+	trackDelay time.Duration
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
 	t.Helper()
+
 	fs := &fakeServer{
 		t:          t,
 		challenge:  "challenge-A",
@@ -47,48 +50,66 @@ func newFakeServer(t *testing.T) *fakeServer {
 		trackState: "granted",
 	}
 	fs.server = httptest.NewServer(http.HandlerFunc(fs.handle))
+
 	t.Cleanup(fs.server.Close)
+
 	return fs
 }
 
 func (fs *fakeServer) get() (challenge, token, appToken, trackState string, hostsResp []LanHost, ifaceResp []LanInterface) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
 	return fs.challenge, fs.token, fs.appToken, fs.trackState, fs.hostsResp, fs.ifaceResp
 }
 
 func (fs *fakeServer) setTrackState(s string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
 	fs.trackState = s
+}
+
+func (fs *fakeServer) setTrackDelay(d time.Duration) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	fs.trackDelay = d
 }
 
 func (fs *fakeServer) setToken(s string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
 	fs.token = s
 }
 
 func (fs *fakeServer) setHosts(h []LanHost) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
 	fs.hostsResp = h
 }
 
 func (fs *fakeServer) setIfaces(i []LanInterface) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
 	fs.ifaceResp = i
 }
 
 func (fs *fakeServer) getAppToken() string {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
 	return fs.appToken
 }
 
 func (fs *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 	challenge, token, appToken, trackState, hostsResp, ifaceResp := fs.get()
+	fs.mu.Lock()
+	trackDelay := fs.trackDelay
+	fs.mu.Unlock()
 
 	switch {
 	case r.Method == "POST" && r.URL.Path == "/api/v4/login/authorize/":
@@ -100,13 +121,20 @@ func (fs *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, authorizeResult{AppToken: appToken, TrackID: fs.trackID})
 
 	case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v4/login/authorize/"):
+		if trackDelay > 0 {
+			select {
+			case <-time.After(trackDelay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		writeOK(w, authorizeStatusResult{Status: trackState})
 
 	case r.Method == "GET" && r.URL.Path == "/api/v4/login/":
 		writeOK(w, loginResult{Challenge: challenge})
 
 	case r.Method == "POST" && r.URL.Path == "/api/v4/login/session/":
-		atomic.AddInt32(&fs.grants, 1)
+		fs.grants.Add(1)
 		var req sessionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -154,44 +182,32 @@ func writeErr(w http.ResponseWriter, code, msg string) {
 
 // --- Register flow ----------------------------------------------------------
 
-func TestRegister_HappyPath(t *testing.T) {
-	fs := newFakeServer(t)
-	c := newTestClient(fs, "")
-
-	tok, err := c.Register(context.Background(), 10*time.Millisecond, 5*time.Second)
-	if err != nil {
-		t.Fatalf("Register: %v", err)
+func TestRegister(t *testing.T) {
+	tests := []struct {
+		name       string
+		trackState string
+		wantErr    error
+		wantToken  string
+	}{
+		{"happy path", "granted", nil, "app-token-secret"},
+		{"denied", "denied", ErrAuthorizationDenied, ""},
+		{"timeout", "timeout", ErrAuthorizationTimedOut, ""},
 	}
-	if tok != fs.getAppToken() {
-		t.Errorf("got token %q", tok)
-	}
-}
 
-func TestRegister_Denied(t *testing.T) {
-	fs := newFakeServer(t)
-	fs.setTrackState("denied")
-	c := newTestClient(fs, "")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFakeServer(t)
+			fs.setTrackState(tt.trackState)
+			c := newTestClient(fs, "")
 
-	_, err := c.Register(context.Background(), 10*time.Millisecond, 5*time.Second)
-	if err == nil {
-		t.Fatal("expected error for denied")
-	}
-	if !errors.Is(err, ErrAuthorizationDenied) {
-		t.Errorf("want ErrAuthorizationDenied, got %v", err)
-	}
-}
-
-func TestRegister_TimeoutFromFreebox(t *testing.T) {
-	fs := newFakeServer(t)
-	fs.setTrackState("timeout")
-	c := newTestClient(fs, "")
-
-	_, err := c.Register(context.Background(), 10*time.Millisecond, 5*time.Second)
-	if err == nil {
-		t.Fatal("expected error for timeout")
-	}
-	if !errors.Is(err, ErrAuthorizationTimedOut) {
-		t.Errorf("want ErrAuthorizationTimedOut, got %v", err)
+			tok, err := c.Register(t.Context(), 10*time.Millisecond, 5*time.Second)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantToken, tok)
+		})
 	}
 }
 
@@ -205,41 +221,70 @@ func TestRegister_PendingThenGranted(t *testing.T) {
 		fs.setTrackState("granted")
 	}()
 
-	tok, err := c.Register(context.Background(), 5*time.Millisecond, 5*time.Second)
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	if tok != fs.getAppToken() {
-		t.Errorf("got token %q", tok)
-	}
+	tok, err := c.Register(t.Context(), 5*time.Millisecond, 5*time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, fs.getAppToken(), tok)
+}
+
+func TestRegister_LocalTimeoutWhilePending(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setTrackState("pending")
+	c := newTestClient(fs, "")
+
+	_, err := c.Register(t.Context(), 10*time.Millisecond, 25*time.Millisecond)
+	require.ErrorIs(t, err, ErrAuthorizationTimedOut)
+}
+
+func TestRegister_LocalTimeoutDuringStatusRequest(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setTrackState("pending")
+	fs.setTrackDelay(200 * time.Millisecond)
+	c := newTestClient(fs, "")
+
+	_, err := c.Register(t.Context(), 10*time.Millisecond, 25*time.Millisecond)
+	require.ErrorIs(t, err, ErrAuthorizationTimedOut)
 }
 
 // --- Session refresh --------------------------------------------------------
 
-func TestSession_Refresh(t *testing.T) {
-	fs := newFakeServer(t)
-	c := newTestClient(fs, fs.getAppToken())
-
-	tok, err := c.sessionToken(context.Background())
-	if err != nil {
-		t.Fatalf("sessionToken: %v", err)
+func TestSession(t *testing.T) {
+	tests := []struct {
+		name           string
+		setup          func(*testing.T, *fakeServer, *Client)
+		wantToken      string
+		wantGrantCount int32
+	}{
+		{
+			name:          "refresh",
+			wantToken:     "session-token-1",
+			wantGrantCount: 1,
+		},
+		{
+			name:  "cached",
+			setup: func(t *testing.T, fs *fakeServer, c *Client) {
+				for range 4 {
+					_, err := c.sessionToken(t.Context())
+					require.NoError(t, err)
+				}
+			},
+			wantToken:     "session-token-1",
+			wantGrantCount: 1,
+		},
 	}
-	if tok != "session-token-1" {
-		t.Errorf("got %q", tok)
-	}
-}
 
-func TestSession_CachedBetweenCalls(t *testing.T) {
-	fs := newFakeServer(t)
-	c := newTestClient(fs, fs.getAppToken())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFakeServer(t)
+			c := newTestClient(fs, fs.getAppToken())
+			if tt.setup != nil {
+				tt.setup(t, fs, c)
+			}
 
-	for i := 0; i < 5; i++ {
-		if _, err := c.sessionToken(context.Background()); err != nil {
-			t.Fatalf("call %d: %v", i, err)
-		}
-	}
-	if got := atomic.LoadInt32(&fs.grants); got != 1 {
-		t.Errorf("session refresh called %d times, want 1", got)
+			tok, err := c.sessionToken(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantToken, tok)
+			assert.Equal(t, tt.wantGrantCount, fs.grants.Load())
+		})
 	}
 }
 
@@ -247,17 +292,13 @@ func TestSession_RefreshOnAuthRequired(t *testing.T) {
 	fs := newFakeServer(t)
 	c := newTestClient(fs, fs.getAppToken())
 
-	if _, err := c.ListInterfaces(context.Background()); err != nil {
-		t.Fatalf("first ListInterfaces: %v", err)
-	}
+	_, err := c.ListInterfaces(t.Context())
+	require.NoError(t, err)
 	// Server rotates session token: previously stored client token now invalid.
 	fs.setToken("session-token-2")
-	if _, err := c.ListInterfaces(context.Background()); err != nil {
-		t.Fatalf("second ListInterfaces: %v", err)
-	}
-	if got := atomic.LoadInt32(&fs.grants); got != 2 {
-		t.Errorf("session refresh called %d times, want 2", got)
-	}
+	_, err = c.ListInterfaces(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), fs.grants.Load())
 }
 
 // --- LAN --------------------------------------------------------------------
@@ -270,13 +311,11 @@ func TestListInterfaces(t *testing.T) {
 	})
 	c := newTestClient(fs, fs.getAppToken())
 
-	ifaces, err := c.ListInterfaces(context.Background())
-	if err != nil {
-		t.Fatalf("ListInterfaces: %v", err)
-	}
-	if len(ifaces) != 2 || ifaces[0].Name != "pub" || ifaces[1].Name != "ipv6" {
-		t.Errorf("got %+v", ifaces)
-	}
+	ifaces, err := c.ListInterfaces(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, ifaces, 2)
+	assert.Equal(t, "pub", ifaces[0].Name)
+	assert.Equal(t, "ipv6", ifaces[1].Name)
 }
 
 func TestListHosts(t *testing.T) {
@@ -295,16 +334,11 @@ func TestListHosts(t *testing.T) {
 	})
 	c := newTestClient(fs, fs.getAppToken())
 
-	hosts, err := c.ListHosts(context.Background(), "pub")
-	if err != nil {
-		t.Fatalf("ListHosts: %v", err)
-	}
-	if len(hosts) != 1 || hosts[0].PrimaryName != "laptop" {
-		t.Fatalf("got %+v", hosts)
-	}
-	if len(hosts[0].L3Connectivities) != 2 {
-		t.Errorf("expected 2 addrs, got %d", len(hosts[0].L3Connectivities))
-	}
+	hosts, err := c.ListHosts(t.Context(), "pub")
+	require.NoError(t, err)
+	require.Len(t, hosts, 1)
+	assert.Equal(t, "laptop", hosts[0].PrimaryName)
+	assert.Len(t, hosts[0].L3Connectivities, 2)
 }
 
 // --- helpers ----------------------------------------------------------------

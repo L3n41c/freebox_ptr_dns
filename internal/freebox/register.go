@@ -38,15 +38,21 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 
 	OnPrompt(c.opt.AppName)
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	for {
-		status, err := c.authorizeStatus(ctx, auth.TrackID)
+		status, err := c.authorizeStatus(timeoutCtx, auth.TrackID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+				return "", ErrAuthorizationTimedOut
+			}
 			return "", fmt.Errorf("track authorization: %w", err)
 		}
 		switch status {
@@ -64,11 +70,14 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 		}
 
 		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		case <-timeoutCtx.Done():
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
 				return "", ErrAuthorizationTimedOut
 			}
-			return "", ctx.Err()
+			return "", timeoutCtx.Err()
 		case <-ticker.C:
 		}
 	}

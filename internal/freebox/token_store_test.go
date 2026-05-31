@@ -111,7 +111,7 @@ func TestTokenStore_Load(t *testing.T) {
 func TestTokenStore_LoadMissingReturnsNotFound(t *testing.T) {
 	_, err := LoadToken("/nonexistent/token")
 	require.Error(t, err, "LoadToken should fail for missing file")
-	assert.Contains(t, err.Error(), "no such file")
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // --- Save errors ------------------------------------------------------------

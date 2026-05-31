@@ -35,6 +35,7 @@ type fakeServer struct {
 	ifaceResp  []LanInterface
 	trackID    int
 	trackState string // "pending", "granted", "denied", "timeout"
+	trackDelay time.Duration
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -69,6 +70,13 @@ func (fs *fakeServer) setTrackState(s string) {
 	fs.trackState = s
 }
 
+func (fs *fakeServer) setTrackDelay(d time.Duration) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	fs.trackDelay = d
+}
+
 func (fs *fakeServer) setToken(s string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -99,6 +107,9 @@ func (fs *fakeServer) getAppToken() string {
 
 func (fs *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 	challenge, token, appToken, trackState, hostsResp, ifaceResp := fs.get()
+	fs.mu.Lock()
+	trackDelay := fs.trackDelay
+	fs.mu.Unlock()
 
 	switch {
 	case r.Method == "POST" && r.URL.Path == "/api/v4/login/authorize/":
@@ -110,6 +121,13 @@ func (fs *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, authorizeResult{AppToken: appToken, TrackID: fs.trackID})
 
 	case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v4/login/authorize/"):
+		if trackDelay > 0 {
+			select {
+			case <-time.After(trackDelay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		writeOK(w, authorizeStatusResult{Status: trackState})
 
 	case r.Method == "GET" && r.URL.Path == "/api/v4/login/":
@@ -208,13 +226,32 @@ func TestRegister_PendingThenGranted(t *testing.T) {
 	assert.Equal(t, fs.getAppToken(), tok)
 }
 
+func TestRegister_LocalTimeoutWhilePending(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setTrackState("pending")
+	c := newTestClient(fs, "")
+
+	_, err := c.Register(t.Context(), 10*time.Millisecond, 25*time.Millisecond)
+	require.ErrorIs(t, err, ErrAuthorizationTimedOut)
+}
+
+func TestRegister_LocalTimeoutDuringStatusRequest(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setTrackState("pending")
+	fs.setTrackDelay(200 * time.Millisecond)
+	c := newTestClient(fs, "")
+
+	_, err := c.Register(t.Context(), 10*time.Millisecond, 25*time.Millisecond)
+	require.ErrorIs(t, err, ErrAuthorizationTimedOut)
+}
+
 // --- Session refresh --------------------------------------------------------
 
 func TestSession(t *testing.T) {
 	tests := []struct {
-		name          string
-		setup         func(*fakeServer, *Client)
-		wantToken     string
+		name           string
+		setup          func(*testing.T, *fakeServer, *Client)
+		wantToken      string
 		wantGrantCount int32
 	}{
 		{
@@ -224,7 +261,7 @@ func TestSession(t *testing.T) {
 		},
 		{
 			name:  "cached",
-			setup: func(fs *fakeServer, c *Client) {
+			setup: func(t *testing.T, fs *fakeServer, c *Client) {
 				for range 4 {
 					_, err := c.sessionToken(t.Context())
 					require.NoError(t, err)
@@ -240,7 +277,7 @@ func TestSession(t *testing.T) {
 			fs := newFakeServer(t)
 			c := newTestClient(fs, fs.getAppToken())
 			if tt.setup != nil {
-				tt.setup(fs, c)
+				tt.setup(t, fs, c)
 			}
 
 			tok, err := c.sessionToken(t.Context())

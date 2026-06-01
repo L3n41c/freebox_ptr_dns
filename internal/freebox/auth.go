@@ -23,21 +23,26 @@ const sessionLifetime = 20 * time.Minute
 func (c *Client) sessionToken(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if c.session != "" && time.Now().Before(c.sessionExp) {
 		return c.session, nil
 	}
+
 	if c.opt.AppToken == "" {
 		return "", errors.New("freebox: no app_token; run enrollment first")
 	}
+
 	if err := c.refreshLocked(ctx); err != nil {
 		return "", err
 	}
+
 	return c.session, nil
 }
 
 func (c *Client) invalidateSession() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.session = ""
 	c.sessionExp = time.Time{}
 }
@@ -48,19 +53,21 @@ func (c *Client) refreshLocked(ctx context.Context) error {
 	if err := c.doPlain(ctx, "GET", "/api/v4/login/", nil, &login); err != nil {
 		return fmt.Errorf("get challenge: %w", err)
 	}
+
 	pwd := hmacSHA1Hex(c.opt.AppToken, login.Challenge)
+
 	var sess sessionResult
-	err := c.doPlain(ctx, "POST", "/api/v4/login/session/", sessionRequest{
+	if err := c.doPlain(ctx, "POST", "/api/v4/login/session/", sessionRequest{
 		AppID:    c.opt.AppID,
 		Password: pwd,
-	}, &sess)
-	if err != nil {
+	}, &sess); err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Code == "invalid_token" {
 			return fmt.Errorf("%w: %s", ErrInvalidAppToken, apiErr.Msg)
 		}
 		return fmt.Errorf("open session: %w", err)
 	}
+
 	c.session = sess.SessionToken
 	c.sessionExp = time.Now().Add(sessionLifetime)
 	return nil

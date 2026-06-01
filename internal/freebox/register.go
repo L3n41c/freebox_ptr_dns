@@ -27,25 +27,37 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 	}
 
 	var auth authorizeResult
-	err := c.doPlain(ctx, "POST", "/api/v4/login/authorize/", authorizeRequest{
+	if err := c.doPlain(ctx, "POST", "/api/v4/login/authorize/", authorizeRequest{
 		AppID:      c.opt.AppID,
 		AppName:    c.opt.AppName,
 		AppVersion: c.opt.AppVersion,
 		DeviceName: c.opt.DeviceName,
-	}, &auth)
-	if err != nil {
+	}, &auth); err != nil {
 		return "", fmt.Errorf("authorize: %w", err)
 	}
 
 	OnPrompt(c.opt.AppName)
 
-	deadline := time.Now().Add(timeout)
+	// Use a separate context for the authorization timeout so that parent context
+	// cancellation (e.g., test timeout) can be distinguished from authorization timeout.
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	for {
-		status, err := c.authorizeStatus(ctx, auth.TrackID)
+		status, err := c.authorizeStatus(timeoutCtx, auth.TrackID)
 		if err != nil {
+			// Parent context was canceled (e.g., caller's deadline) - propagate that error first
+			// to preserve caller's error semantics.
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			// Our timeout context expired during authorizeStatus request.
+			if errors.Is(err, context.DeadlineExceeded) {
+				return "", ErrAuthorizationTimedOut
+			}
 			return "", fmt.Errorf("track authorization: %w", err)
 		}
 		switch status {
@@ -62,12 +74,14 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 			return "", fmt.Errorf("freebox: unexpected status %q", status)
 		}
 
-		if time.Now().After(deadline) {
-			return "", ErrAuthorizationTimedOut
-		}
 		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
+		case <-timeoutCtx.Done():
+			// Parent context was canceled first - propagate caller's error.
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			// Our authorization timeout expired.
+			return "", ErrAuthorizationTimedOut
 		case <-ticker.C:
 		}
 	}

@@ -59,6 +59,7 @@ func NewClient(opt ClientOptions) *Client {
 func (c *Client) SetAppToken(token string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.opt.AppToken = token
 	c.session = ""
 	c.sessionExp = time.Time{}
@@ -70,11 +71,13 @@ func (c *Client) doPlain(ctx context.Context, method, path string, body any, out
 	if err != nil {
 		return err
 	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
+
 	return parseEnvelope(resp, out)
 }
 
@@ -86,15 +89,18 @@ func (c *Client) doAuth(ctx context.Context, method, path string, body any, out 
 		if err != nil {
 			return err
 		}
+
 		req, err := c.buildRequest(ctx, method, path, body)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("X-Fbx-App-Auth", token)
+
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			return fmt.Errorf("%s %s: %w", method, path, err)
 		}
+
 		err = parseEnvelope(resp, out)
 		resp.Body.Close() //nolint:errcheck
 		var apiErr *APIError
@@ -102,6 +108,7 @@ func (c *Client) doAuth(ctx context.Context, method, path string, body any, out 
 			c.invalidateSession()
 			continue
 		}
+
 		return err
 	}
 }
@@ -115,6 +122,7 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 		}
 		rdr = bytes.NewReader(buf)
 	}
+
 	req, err := http.NewRequestWithContext(ctx, method, c.opt.BaseURL+path, rdr)
 	if err != nil {
 		return nil, err
@@ -123,6 +131,7 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+
 	return req, nil
 }
 
@@ -149,6 +158,7 @@ func parseEnvelope(resp *http.Response, out any) error {
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
+
 	if resp.StatusCode/100 != 2 {
 		var env envelope
 		if json.Unmarshal(body, &env) == nil && env.ErrorCode != "" {
@@ -157,6 +167,7 @@ func parseEnvelope(resp *http.Response, out any) error {
 		// Do not echo the raw body: it may contain tokens on the /login/* paths.
 		return fmt.Errorf("http %d (body redacted)", resp.StatusCode)
 	}
+
 	var env envelope
 	if err := json.Unmarshal(body, &env); err != nil {
 		return fmt.Errorf("decode envelope: %w", err)
@@ -164,11 +175,14 @@ func parseEnvelope(resp *http.Response, out any) error {
 	if !env.Success {
 		return &APIError{Code: env.ErrorCode, Msg: env.Msg}
 	}
+
 	if out == nil || len(env.Result) == 0 {
 		return nil
 	}
+
 	if err := json.Unmarshal(env.Result, out); err != nil {
 		return fmt.Errorf("decode result: %w", err)
 	}
+
 	return nil
 }

@@ -12,19 +12,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/L3n41c/freebox_ptr_dns/internal/freebox"
 )
 
 // fakeAPI is a controllable stub of the Freebox API used by the poller.
 type fakeAPI struct {
-	calls      int32
+	calls      atomic.Int32
 	failNext   atomic.Int32 // non-zero ⇒ next N calls fail
 	interfaces []freebox.LanInterface
 	hostsByIf  map[string][]freebox.LanHost
 }
 
 func (f *fakeAPI) ListInterfaces(ctx context.Context) ([]freebox.LanInterface, error) {
-	atomic.AddInt32(&f.calls, 1)
+	f.calls.Add(1)
 	if f.failNext.Load() > 0 {
 		f.failNext.Add(-1)
 		return nil, errors.New("boom")
@@ -54,15 +57,13 @@ func TestPoller_Refresh_PopulatesCache(t *testing.T) {
 	cache := NewCache()
 	p := NewPoller(api, cache, "lan", 0)
 
-	if err := p.Refresh(context.Background()); err != nil {
-		t.Fatalf("Refresh: %v", err)
-	}
-	if name, ok := cache.Lookup(netip.MustParseAddr("192.168.1.42")); !ok || name != "laptop.lan." {
-		t.Errorf("v4 got (%q, %v)", name, ok)
-	}
-	if name, ok := cache.Lookup(netip.MustParseAddr("fd00::1")); !ok || name != "laptop.lan." {
-		t.Errorf("v6 got (%q, %v)", name, ok)
-	}
+	require.NoError(t, p.Refresh(t.Context()))
+	name, ok := cache.Lookup(netip.MustParseAddr("192.168.1.42"))
+	assert.True(t, ok)
+	assert.Equal(t, "laptop.lan.", name)
+	name, ok = cache.Lookup(netip.MustParseAddr("fd00::1"))
+	assert.True(t, ok)
+	assert.Equal(t, "laptop.lan.", name)
 }
 
 func TestPoller_Refresh_SkipsHostsWithoutName(t *testing.T) {
@@ -78,15 +79,12 @@ func TestPoller_Refresh_SkipsHostsWithoutName(t *testing.T) {
 	cache := NewCache()
 	p := NewPoller(api, cache, "lan", 0)
 
-	if err := p.Refresh(context.Background()); err != nil {
-		t.Fatalf("Refresh: %v", err)
-	}
-	if _, ok := cache.Lookup(netip.MustParseAddr("10.0.0.1")); ok {
-		t.Error("nameless host should be skipped")
-	}
-	if name, ok := cache.Lookup(netip.MustParseAddr("10.0.0.2")); !ok || name != "named.lan." {
-		t.Errorf("got (%q, %v)", name, ok)
-	}
+	require.NoError(t, p.Refresh(t.Context()))
+	_, ok := cache.Lookup(netip.MustParseAddr("10.0.0.1"))
+	assert.False(t, ok, "nameless host should be skipped")
+	name, ok := cache.Lookup(netip.MustParseAddr("10.0.0.2"))
+	assert.True(t, ok)
+	assert.Equal(t, "named.lan.", name)
 }
 
 func TestPoller_Refresh_SkipsInvalidAddrs(t *testing.T) {
@@ -105,15 +103,10 @@ func TestPoller_Refresh_SkipsInvalidAddrs(t *testing.T) {
 	cache := NewCache()
 	p := NewPoller(api, cache, "lan", 0)
 
-	if err := p.Refresh(context.Background()); err != nil {
-		t.Fatalf("Refresh: %v", err)
-	}
-	if cache.Len() != 1 {
-		t.Errorf("Len = %d, want 1", cache.Len())
-	}
-	if _, ok := cache.Lookup(netip.MustParseAddr("10.0.0.7")); !ok {
-		t.Error("valid addr missing")
-	}
+	require.NoError(t, p.Refresh(t.Context()))
+	assert.Equal(t, 1, cache.Len())
+	_, ok := cache.Lookup(netip.MustParseAddr("10.0.0.7"))
+	assert.True(t, ok, "valid addr missing")
 }
 
 func TestPoller_Refresh_SanitizesName(t *testing.T) {
@@ -122,8 +115,8 @@ func TestPoller_Refresh_SanitizesName(t *testing.T) {
 		want string
 	}{
 		{"My Laptop", "my-laptop.lan."},
-		{"café", "caf.lan."}, // accents removed, trailing '-' trimmed (RFC 1035)
-		{"Léa", "l-a.lan."},  // accents in the middle keep the placeholder
+		{"café", "caf.lan."},    // accents removed, trailing '-' trimmed (RFC 1035)
+		{"Léa", "l-a.lan."},     // accents in the middle keep the placeholder
 		{"a/b\\c", "a-b-c.lan."},
 		{"UPPER", "upper.lan."},
 		{"  trim  ", "trim.lan."},
@@ -141,13 +134,9 @@ func TestPoller_Refresh_SanitizesName(t *testing.T) {
 			}
 			cache := NewCache()
 			p := NewPoller(api, cache, "lan", 0)
-			if err := p.Refresh(context.Background()); err != nil {
-				t.Fatalf("Refresh: %v", err)
-			}
+			require.NoError(t, p.Refresh(t.Context()))
 			name, _ := cache.Lookup(netip.MustParseAddr("10.0.0.1"))
-			if name != tc.want {
-				t.Errorf("got %q, want %q", name, tc.want)
-			}
+			assert.Equal(t, tc.want, name)
 		})
 	}
 }
@@ -162,13 +151,9 @@ func TestPoller_Refresh_LocalDomainOptional(t *testing.T) {
 	}
 	cache := NewCache()
 	p := NewPoller(api, cache, "", 0)
-	if err := p.Refresh(context.Background()); err != nil {
-		t.Fatalf("Refresh: %v", err)
-	}
+	require.NoError(t, p.Refresh(t.Context()))
 	name, _ := cache.Lookup(netip.MustParseAddr("10.0.0.1"))
-	if name != "host." {
-		t.Errorf("got %q, want %q", name, "host.")
-	}
+	assert.Equal(t, "host.", name)
 }
 
 func TestPoller_Refresh_ErrorKeepsPreviousCache(t *testing.T) {
@@ -181,16 +166,12 @@ func TestPoller_Refresh_ErrorKeepsPreviousCache(t *testing.T) {
 	cache := NewCache()
 	p := NewPoller(api, cache, "lan", 0)
 
-	if err := p.Refresh(context.Background()); err != nil {
-		t.Fatalf("first Refresh: %v", err)
-	}
+	require.NoError(t, p.Refresh(t.Context()))
 	api.failNext.Store(1)
-	if err := p.Refresh(context.Background()); err == nil {
-		t.Fatal("expected error")
-	}
-	if name, ok := cache.Lookup(netip.MustParseAddr("10.0.0.1")); !ok || name != "host.lan." {
-		t.Errorf("cache should be unchanged: got (%q, %v)", name, ok)
-	}
+	assert.Error(t, p.Refresh(t.Context()), "expected error")
+	name, ok := cache.Lookup(netip.MustParseAddr("10.0.0.1"))
+	assert.True(t, ok)
+	assert.Equal(t, "host.lan.", name, "cache should be unchanged")
 }
 
 func TestPoller_Run_TicksAndStops(t *testing.T) {
@@ -200,7 +181,7 @@ func TestPoller_Run_TicksAndStops(t *testing.T) {
 	cache := NewCache()
 	p := NewPoller(api, cache, "lan", 5*time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
 		done <- p.Run(ctx)
@@ -211,15 +192,11 @@ func TestPoller_Run_TicksAndStops(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Errorf("Run after cancel returned err: %v", err)
-		}
+		assert.NoError(t, err, "Run after cancel returned err")
 	case <-time.After(time.Second):
 		t.Fatal("Run did not return after cancel")
 	}
-	if got := atomic.LoadInt32(&api.calls); got < 2 {
-		t.Errorf("api called %d times, want at least 2", got)
-	}
+	assert.GreaterOrEqual(t, api.calls.Load(), int32(2), "api called at least 2 times")
 }
 
 func TestPoller_Run_BubblesUpInvalidAppToken(t *testing.T) {
@@ -228,14 +205,12 @@ func TestPoller_Run_BubblesUpInvalidAppToken(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- p.Run(context.Background())
+		done <- p.Run(t.Context())
 	}()
 
 	select {
 	case err := <-done:
-		if !errors.Is(err, freebox.ErrInvalidAppToken) {
-			t.Errorf("got %v, want ErrInvalidAppToken", err)
-		}
+		assert.ErrorIs(t, err, freebox.ErrInvalidAppToken)
 	case <-time.After(time.Second):
 		t.Fatal("Run did not return on ErrInvalidAppToken")
 	}

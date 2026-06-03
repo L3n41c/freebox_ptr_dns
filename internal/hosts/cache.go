@@ -5,6 +5,7 @@
 package hosts
 
 import (
+	"maps"
 	"net/netip"
 	"sync/atomic"
 )
@@ -30,10 +31,7 @@ func (c *Cache) Lookup(addr netip.Addr) (string, bool) {
 
 func (c *Cache) Replace(m map[netip.Addr]string) {
 	// Copy so the caller can't mutate the map we just published.
-	copied := make(map[netip.Addr]string, len(m))
-	for k, v := range m {
-		copied[k] = v
-	}
+	copied := maps.Clone(m)
 	c.p.Store(&copied)
 }
 

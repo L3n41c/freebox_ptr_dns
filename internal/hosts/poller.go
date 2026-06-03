@@ -50,28 +50,34 @@ func (p *Poller) Refresh(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list interfaces: %w", err)
 	}
+
 	out := make(map[netip.Addr]string)
 	for _, iface := range ifaces {
 		hosts, err := p.api.ListHosts(ctx, iface.Name)
 		if err != nil {
 			return fmt.Errorf("list hosts on %s: %w", iface.Name, err)
 		}
+
 		for _, h := range hosts {
 			label := sanitizeLabel(h.PrimaryName)
 			if label == "" {
 				continue
 			}
 			fqdn := buildFQDN(label, p.localDomain)
+
 			for _, l3 := range h.L3Connectivities {
 				addr, err := netip.ParseAddr(l3.Addr)
 				if err != nil {
 					continue
 				}
+
 				out[addr] = fqdn
 			}
 		}
 	}
+
 	p.cache.Replace(out)
+
 	return nil
 }
 
@@ -85,12 +91,14 @@ func (p *Poller) Run(ctx context.Context) error {
 
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
 		}
+
 		err := p.Refresh(ctx)
 		if err == nil {
 			slog.Info("hosts refreshed", "n", p.cache.Len())
@@ -104,11 +112,13 @@ func (p *Poller) Run(ctx context.Context) error {
 			return err
 		}
 		slog.Warn("refresh failed", "err", err, "backoff", backoff)
+
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(backoff):
 		}
+
 		backoff *= 2
 		if backoff > maxBackoff {
 			backoff = maxBackoff

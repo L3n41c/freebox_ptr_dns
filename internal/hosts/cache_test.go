@@ -8,35 +8,61 @@ import (
 	"net/netip"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCache_LookupOnEmpty(t *testing.T) {
 	c := NewCache()
 	_, ok := c.Lookup(netip.MustParseAddr("192.168.1.1"))
-	if ok {
-		t.Fatal("expected miss on empty cache")
-	}
+	assert.False(t, ok, "expected miss on empty cache")
 }
 
 func TestCache_ReplaceAndLookup(t *testing.T) {
-	c := NewCache()
-	m := map[netip.Addr]string{
-		netip.MustParseAddr("192.168.1.42"): "laptop.lan",
-		netip.MustParseAddr("fd00::1"):      "router.lan",
+	tests := []struct {
+		name     string
+		entries  map[netip.Addr]string
+		addr     netip.Addr
+		expected string
+		wantOk   bool
+	}{
+		{
+			name: "hit v4",
+			entries: map[netip.Addr]string{
+				netip.MustParseAddr("192.168.1.42"): "laptop.lan",
+				netip.MustParseAddr("fd00::1"):      "router.lan",
+			},
+			addr:     netip.MustParseAddr("192.168.1.42"),
+			expected: "laptop.lan",
+			wantOk:   true,
+		},
+		{
+			name: "hit v6",
+			entries: map[netip.Addr]string{
+				netip.MustParseAddr("192.168.1.42"): "laptop.lan",
+				netip.MustParseAddr("fd00::1"):      "router.lan",
+			},
+			addr:     netip.MustParseAddr("fd00::1"),
+			expected: "router.lan",
+			wantOk:   true,
+		},
+		{
+			name:    "miss",
+			entries: map[netip.Addr]string{netip.MustParseAddr("192.168.1.42"): "laptop.lan"},
+			addr:     netip.MustParseAddr("10.0.0.1"),
+			expected: "",
+			wantOk:   false,
+		},
 	}
-	c.Replace(m)
 
-	name, ok := c.Lookup(netip.MustParseAddr("192.168.1.42"))
-	if !ok || name != "laptop.lan" {
-		t.Errorf("lookup v4: got (%q, %v)", name, ok)
-	}
-	name, ok = c.Lookup(netip.MustParseAddr("fd00::1"))
-	if !ok || name != "router.lan" {
-		t.Errorf("lookup v6: got (%q, %v)", name, ok)
-	}
-	_, ok = c.Lookup(netip.MustParseAddr("10.0.0.1"))
-	if ok {
-		t.Error("expected miss for unknown addr")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewCache()
+			c.Replace(tt.entries)
+			name, ok := c.Lookup(tt.addr)
+			assert.Equal(t, tt.wantOk, ok)
+			assert.Equal(t, tt.expected, name)
+		})
 	}
 }
 
@@ -51,10 +77,8 @@ func TestCache_ReplaceIsAtomic(t *testing.T) {
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -62,18 +86,16 @@ func TestCache_ReplaceIsAtomic(t *testing.T) {
 				default:
 				}
 				name, ok := c.Lookup(netip.MustParseAddr("10.0.0.1"))
-				if !ok {
-					t.Errorf("unexpected miss during concurrent replace")
+				if !assert.True(t, ok, "unexpected miss during concurrent replace") {
 					return
 				}
-				if name != "old" && name != "new" {
-					t.Errorf("torn read: %q", name)
+				if !assert.Contains(t, []string{"old", "new"}, name) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		c.Replace(new)
 		c.Replace(old)
 	}
@@ -89,21 +111,31 @@ func TestCache_ReplaceDoesNotMutateInput(t *testing.T) {
 	m[netip.MustParseAddr("10.0.0.1")] = "tampered"
 
 	name, ok := c.Lookup(netip.MustParseAddr("10.0.0.1"))
-	if !ok || name != "host" {
-		t.Errorf("cache mutated externally: got (%q, %v)", name, ok)
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "host", name, "cache mutated externally")
 }
 
 func TestCache_Len(t *testing.T) {
-	c := NewCache()
-	if c.Len() != 0 {
-		t.Errorf("empty cache Len = %d", c.Len())
+	tests := []struct {
+		name     string
+		entries  map[netip.Addr]string
+		expected int
+	}{
+		{name: "empty", entries: nil, expected: 0},
+		{name: "single", entries: map[netip.Addr]string{netip.MustParseAddr("1.1.1.1"): "a"}, expected: 1},
+		{name: "multiple", entries: map[netip.Addr]string{
+			netip.MustParseAddr("1.1.1.1"): "a",
+			netip.MustParseAddr("2.2.2.2"): "b",
+		}, expected: 2},
 	}
-	c.Replace(map[netip.Addr]string{
-		netip.MustParseAddr("1.1.1.1"): "a",
-		netip.MustParseAddr("2.2.2.2"): "b",
-	})
-	if c.Len() != 2 {
-		t.Errorf("Len = %d", c.Len())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewCache()
+			if tt.entries != nil {
+				c.Replace(tt.entries)
+			}
+			assert.Equal(t, tt.expected, c.Len())
+		})
 	}
 }

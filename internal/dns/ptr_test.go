@@ -80,6 +80,11 @@ func TestAddrFromPTR(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "ipv6 empty nibble",
+			qname:   "1..0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.e.f.ip6.arpa.",
+			wantErr: true,
+		},
+		{
 			name:    "not arpa",
 			qname:   "example.com.",
 			wantErr: true,

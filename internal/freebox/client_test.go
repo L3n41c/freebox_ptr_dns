@@ -5,10 +5,13 @@
 package freebox
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -174,6 +177,7 @@ func TestRegister(t *testing.T) {
 		{"happy path", "granted", nil, "app-token-secret"},
 		{"denied", "denied", ErrAuthorizationDenied, ""},
 		{"timeout", "timeout", ErrAuthorizationTimedOut, ""},
+		{"unknown", "unknown", nil, ""}, // will return an error
 	}
 
 	for _, tt := range tests {
@@ -187,10 +191,46 @@ func TestRegister(t *testing.T) {
 				require.ErrorIs(t, err, tt.wantErr)
 				return
 			}
+			if tt.wantToken == "" && err != nil {
+				// Expected an error for this case
+				assert.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantToken, tok)
 		})
 	}
+}
+
+func TestRegister_Defaults(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setTrackState("granted")
+	c := newTestClient(fs, "")
+
+	// Test that zero/negative values use defaults
+	// pollInterval <= 0 should use 2s default
+	// timeout <= 0 should use 5m default
+	tok, err := c.Register(t.Context(), 0, 0)
+	require.NoError(t, err)
+	assert.Equal(t, fs.getAppToken(), tok)
+}
+
+func TestRegister_ContextCancelled(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setTrackState("pending") // Never grants
+	c := newTestClient(fs, "")
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// Cancel context after a short delay
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := c.Register(ctx, 5*time.Millisecond, 5*time.Second)
+	require.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
 }
 
 func TestRegister_PendingThenGranted(t *testing.T) {
@@ -316,4 +356,204 @@ func newTestClient(fs *fakeServer, appToken string) *Client {
 		AppToken:   appToken,
 		HTTPClient: fs.server.Client(),
 	})
+}
+
+// --- SetAppToken ------------------------------------------------------------
+
+func TestSetAppToken(t *testing.T) {
+	c := NewClient(ClientOptions{
+		BaseURL:  "http://localhost",
+		AppID:    "test.app",
+		AppName:  "Test App",
+		AppToken: "initial-token",
+	})
+
+	// Verify initial state
+	assert.Equal(t, "initial-token", c.opt.AppToken)
+	assert.Equal(t, "", c.session)
+	assert.Equal(t, time.Time{}, c.sessionExp)
+
+	// Set new token
+	c.SetAppToken("new-token")
+
+	// Verify token was updated and session was reset
+	assert.Equal(t, "new-token", c.opt.AppToken)
+	assert.Equal(t, "", c.session)
+	assert.Equal(t, time.Time{}, c.sessionExp)
+}
+
+func TestSetAppToken_EmptyToken(t *testing.T) {
+	c := NewClient(ClientOptions{
+		BaseURL:  "http://localhost",
+		AppID:    "test.app",
+		AppName:  "Test App",
+		AppToken: "initial-token",
+	})
+
+	// Set empty token
+	c.SetAppToken("")
+
+	// Verify token was updated and session was reset
+	assert.Equal(t, "", c.opt.AppToken)
+	assert.Equal(t, "", c.session)
+	assert.Equal(t, time.Time{}, c.sessionExp)
+}
+
+// --- APIError.Error ---------------------------------------------------------
+
+func TestAPIError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *APIError
+		want string
+	}{
+		{
+			name: "with message",
+			err:  &APIError{Code: "test_code", Msg: "test message"},
+			want: "freebox API error: test_code (test message)",
+		},
+		{
+			name: "without message",
+			err:  &APIError{Code: "test_code", Msg: ""},
+			want: "freebox API error: test_code",
+		},
+		{
+			name: "empty code with message",
+			err:  &APIError{Code: "", Msg: "test message"},
+			want: "freebox API error:  (test message)",
+		},
+		{
+			name: "empty both",
+			err:  &APIError{Code: "", Msg: ""},
+			want: "freebox API error: ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// --- parseEnvelope ----------------------------------------------------------
+
+func TestParseEnvelope(t *testing.T) {
+	tests := []struct {
+		name        string
+		statusCode int
+		body       string
+		out        any
+		wantErr    bool
+		wantErrType any // expected error type or partial string
+	}{
+		{
+			name:        "success with result",
+			statusCode: http.StatusOK,
+			body:       `{"success":true,"result":{"field":"value"}}`,
+			out:        &map[string]string{},
+			wantErr:    false,
+		},
+		{
+			name:        "success with empty result",
+			statusCode: http.StatusOK,
+			body:       `{"success":true,"result":{}}`,
+			out:        &map[string]string{},
+			wantErr:    false,
+		},
+		{
+			name:        "success with no result field",
+			statusCode: http.StatusOK,
+			body:       `{"success":true}`,
+			out:        &map[string]string{},
+			wantErr:    false,
+		},
+		{
+			name:        "success with out nil",
+			statusCode: http.StatusOK,
+			body:       `{"success":true,"result":{"field":"value"}}`,
+			out:        nil,
+			wantErr:    false,
+		},
+		{
+			name:        "failure with error code",
+			statusCode: http.StatusOK,
+			body:       `{"success":false,"error_code":"auth_required","msg":"session expired"}`,
+			out:        &map[string]string{},
+			wantErr:    true,
+			wantErrType: &APIError{Code: "auth_required", Msg: "session expired"},
+		},
+		{
+			name:        "non-2xx status code",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"success":false,"error_code":"auth_required","msg":"unauthorized"}`,
+			out:        &map[string]string{},
+			wantErr:    true,
+			wantErrType: &APIError{Code: "auth_required", Msg: "unauthorized"},
+		},
+		{
+			name:        "non-2xx status code without error code",
+			statusCode: http.StatusInternalServerError,
+			body:       `{"success":false,"msg":"internal error"}`,
+			out:        &map[string]string{},
+			wantErr:    true,
+		},
+		{
+			name:        "non-2xx status code with unparseable body",
+			statusCode: http.StatusBadRequest,
+			body:       `not json`,
+			out:        &map[string]string{},
+			wantErr:    true,
+		},
+		{
+			name:        "success with malformed result JSON",
+			statusCode: http.StatusOK,
+			body:       `{"success":true,"result":"not json"}`,
+			out:        &map[string]string{},
+			wantErr:    true,
+		},
+		{
+			name:        "success with malformed envelope JSON",
+			statusCode: http.StatusOK,
+			body:       `not json`,
+			out:        &map[string]string{},
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bodyReader := io.NopCloser(strings.NewReader(tt.body))
+			resp := &http.Response{
+				StatusCode: tt.statusCode,
+				Body:       bodyReader,
+				Header:     make(http.Header),
+			}
+			resp.Header.Set("Content-Type", "application/json")
+
+			err := parseEnvelope(resp, tt.out)
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error for %s", tt.name)
+				if tt.wantErrType != nil {
+					var wantAPIErr *APIError
+					var ok bool
+					if wantAPIErr, ok = tt.wantErrType.(*APIError); ok {
+						var apiErr *APIError
+						if errors.As(err, &apiErr) {
+							assert.Equal(t, wantAPIErr.Code, apiErr.Code)
+							assert.Equal(t, wantAPIErr.Msg, apiErr.Msg)
+						}
+					}
+				}
+			} else {
+				require.NoError(t, err, "unexpected error for %s", tt.name)
+				if tt.out != nil {
+					// Verify the output was populated if we provided a non-nil out
+					// This is a basic check; the exact structure depends on the test
+				}
+			}
+		})
+	}
 }

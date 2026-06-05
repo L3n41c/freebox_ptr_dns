@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,6 +332,67 @@ token_path="/tmp/t"
 			}
 
 			require.NoError(t, err, "unexpected error for domain=%s: %v", tc.domain, err)
+		})
+	}
+}
+
+// --- LocalDomain.String() ----------------------------------------------------
+
+func TestLocalDomain_String(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    LocalDomain
+		want     string
+	}{
+		{"empty", LocalDomain(""), ""},
+		{"simple", LocalDomain("lan"), "lan"},
+		{"multi-label", LocalDomain("home.lan"), "home.lan"},
+		{"with numbers", LocalDomain("mynet123.local"), "mynet123.local"},
+		{"with dashes", LocalDomain("my-domain.local"), "my-domain.local"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.input.String()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// --- validateLocalDomain ---------------------------------------------------
+
+func TestValidateLocalDomain(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"empty allowed", "", false},
+		{"simple", "lan", false},
+		{"two labels", "home.lan", false},
+		{"with numbers", "mynet123", false},
+		{"with dashes in middle", "my-domain", false},
+		{"trailing dot", "lan.", true},
+		{"embedded space", "home lan", true},
+		{"leading dash", "-lan", true},
+		{"trailing dash", "lan-", true},
+		{"empty label", "home..lan", true},
+		{"label too long", strings.Repeat("a", 64), true},
+		{"label exactly 63", strings.Repeat("a", 63), false},
+		{"unicode", "café", true},
+		{"uppercase", "LAN", false},
+		{"mixed case", "MyLan", false},
+		{"only dash", "-", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateLocalDomain(tt.input)
+			if tt.wantErr {
+				require.Error(t, err, "expected error for %s", tt.name)
+			} else {
+				require.NoError(t, err, "unexpected error for %s", tt.name)
+			}
 		})
 	}
 }

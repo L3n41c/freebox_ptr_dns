@@ -29,7 +29,7 @@ func TestParseLevel(t *testing.T) {
 		{"uppercase WARN", "WARN", slog.LevelWarn},
 		{"uppercase ERROR", "ERROR", slog.LevelError},
 		{"mixed case DeBuG", "DeBuG", slog.LevelDebug},
-		{"with spaces", " info ", slog.LevelInfo},
+		{"with spaces defaults to info", " info ", slog.LevelInfo},
 		{"empty defaults to info", "", slog.LevelInfo},
 		{"unknown defaults to info", "unknown", slog.LevelInfo},
 		{"random defaults to info", "random", slog.LevelInfo},

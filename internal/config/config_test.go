@@ -334,3 +334,26 @@ token_path="/tmp/t"
 		})
 	}
 }
+
+// --- LocalDomain.String() ----------------------------------------------------
+
+func TestLocalDomain_String(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    LocalDomain
+		want     string
+	}{
+		{"empty", LocalDomain(""), ""},
+		{"simple", LocalDomain("lan"), "lan"},
+		{"multi-label", LocalDomain("home.lan"), "home.lan"},
+		{"with numbers", LocalDomain("mynet123.local"), "mynet123.local"},
+		{"with dashes", LocalDomain("my-domain.local"), "my-domain.local"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.input.String()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

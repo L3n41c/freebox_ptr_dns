@@ -317,3 +317,82 @@ func newTestClient(fs *fakeServer, appToken string) *Client {
 		HTTPClient: fs.server.Client(),
 	})
 }
+
+// --- SetAppToken ------------------------------------------------------------
+
+func TestSetAppToken(t *testing.T) {
+	c := NewClient(ClientOptions{
+		BaseURL:  "http://localhost",
+		AppID:    "test.app",
+		AppName:  "Test App",
+		AppToken: "initial-token",
+	})
+
+	// Verify initial state
+	assert.Equal(t, "initial-token", c.opt.AppToken)
+	assert.Equal(t, "", c.session)
+	assert.Equal(t, time.Time{}, c.sessionExp)
+
+	// Set new token
+	c.SetAppToken("new-token")
+
+	// Verify token was updated and session was reset
+	assert.Equal(t, "new-token", c.opt.AppToken)
+	assert.Equal(t, "", c.session)
+	assert.Equal(t, time.Time{}, c.sessionExp)
+}
+
+func TestSetAppToken_EmptyToken(t *testing.T) {
+	c := NewClient(ClientOptions{
+		BaseURL:  "http://localhost",
+		AppID:    "test.app",
+		AppName:  "Test App",
+		AppToken: "initial-token",
+	})
+
+	// Set empty token
+	c.SetAppToken("")
+
+	// Verify token was updated and session was reset
+	assert.Equal(t, "", c.opt.AppToken)
+	assert.Equal(t, "", c.session)
+	assert.Equal(t, time.Time{}, c.sessionExp)
+}
+
+// --- APIError.Error ---------------------------------------------------------
+
+func TestAPIError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *APIError
+		want string
+	}{
+		{
+			name: "with message",
+			err:  &APIError{Code: "test_code", Msg: "test message"},
+			want: "freebox API error: test_code (test message)",
+		},
+		{
+			name: "without message",
+			err:  &APIError{Code: "test_code", Msg: ""},
+			want: "freebox API error: test_code",
+		},
+		{
+			name: "empty code with message",
+			err:  &APIError{Code: "", Msg: "test message"},
+			want: "freebox API error:  (test message)",
+		},
+		{
+			name: "empty both",
+			err:  &APIError{Code: "", Msg: ""},
+			want: "freebox API error: ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

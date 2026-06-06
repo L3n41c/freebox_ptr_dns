@@ -23,7 +23,7 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: '{{ incpatch .Version }}-next'
+  version_template: '{{ incpatch .Version }}-next'
 
 changelog:
   sort: asc
@@ -33,7 +33,9 @@ changelog:
       - '^test:'
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
+      - tar.zst
     name_template: '{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
 
 release:

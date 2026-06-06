@@ -12,8 +12,8 @@ import (
 )
 
 // Register runs the full authorization flow:
-//  1. POST /api/v4/login/authorize/ to obtain an app_token + track_id.
-//  2. Poll GET /api/v4/login/authorize/{track_id} until the user grants
+//  1. POST login/authorize/ to obtain an app_token + track_id.
+//  2. Poll GET login/authorize/{track_id} until the user grants
 //     (or denies / times out) on the Freebox front panel.
 //
 // On success returns the new app_token. The caller is responsible for
@@ -27,16 +27,16 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 	}
 
 	var auth authorizeResult
-	if err := c.doPlain(ctx, "POST", "/api/v4/login/authorize/", authorizeRequest{
-		AppID:      c.opt.AppID,
-		AppName:    c.opt.AppName,
-		AppVersion: c.opt.AppVersion,
-		DeviceName: c.opt.DeviceName,
+	if err := c.doPlain(ctx, "POST", "login/authorize/", authorizeRequest{
+		AppID:      c.appID,
+		AppName:    c.appName,
+		AppVersion: c.appVersion,
+		DeviceName: c.deviceName,
 	}, &auth); err != nil {
 		return "", fmt.Errorf("authorize: %w", err)
 	}
 
-	OnPrompt(c.opt.AppName)
+	OnPrompt(c.appName)
 
 	// Use a separate context for the authorization timeout so that parent context
 	// cancellation (e.g., test timeout) can be distinguished from authorization timeout.
@@ -89,7 +89,7 @@ func (c *Client) Register(ctx context.Context, pollInterval, timeout time.Durati
 
 func (c *Client) authorizeStatus(ctx context.Context, trackID int) (string, error) {
 	var out authorizeStatusResult
-	err := c.doPlain(ctx, "GET", fmt.Sprintf("/api/v4/login/authorize/%d", trackID), nil, &out)
+	err := c.doPlain(ctx, "GET", fmt.Sprintf("login/authorize/%d", trackID), nil, &out)
 	if err != nil {
 		return "", err
 	}

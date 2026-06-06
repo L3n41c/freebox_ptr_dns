@@ -28,7 +28,7 @@ func (c *Client) sessionToken(ctx context.Context) (string, error) {
 		return c.session, nil
 	}
 
-	if c.opt.AppToken == "" {
+	if c.appToken == "" {
 		return "", errors.New("freebox: no app_token; run enrollment first")
 	}
 
@@ -50,15 +50,15 @@ func (c *Client) invalidateSession() {
 // refreshLocked must be called with c.mu held.
 func (c *Client) refreshLocked(ctx context.Context) error {
 	var login loginResult
-	if err := c.doPlain(ctx, "GET", "/api/v4/login/", nil, &login); err != nil {
+	if err := c.doPlain(ctx, "GET", "login/", nil, &login); err != nil {
 		return fmt.Errorf("get challenge: %w", err)
 	}
 
-	pwd := hmacSHA1Hex(c.opt.AppToken, login.Challenge)
+	pwd := hmacSHA1Hex(c.appToken, login.Challenge)
 
 	var sess sessionResult
-	if err := c.doPlain(ctx, "POST", "/api/v4/login/session/", sessionRequest{
-		AppID:    c.opt.AppID,
+	if err := c.doPlain(ctx, "POST", "login/session/", sessionRequest{
+		AppID:    c.appID,
 		Password: pwd,
 	}, &sess); err != nil {
 		var apiErr *APIError

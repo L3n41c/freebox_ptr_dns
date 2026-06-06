@@ -7,11 +7,14 @@ package freebox
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,30 +31,172 @@ var ErrAuthorizationDenied = errors.New("freebox: authorization denied")
 var ErrAuthorizationTimedOut = errors.New("freebox: authorization timed out")
 
 type ClientOptions struct {
-	BaseURL    string // e.g. "https://mafreebox.freebox.fr" (no trailing slash)
-	AppID      string
-	AppName    string
-	AppVersion string
-	DeviceName string
-	AppToken   string       // empty when registering
-	HTTPClient *http.Client // optional; defaults to a sensible client
+	AppID        string
+	AppName      string
+	AppVersion   string
+	DeviceName   string
+	AppToken     string       // empty when registering
+	HTTPClient   *http.Client // optional; defaults to a sensible client
+	InsecureHTTP bool         // opt-in: send tokens over plain HTTP
 }
 
 type Client struct {
-	opt        ClientOptions
-	httpClient *http.Client
+	fullBaseURL string // e.g. "https://example.fbxos.fr:3615/api/v4/"
+	appID       string
+	appName     string
+	appVersion  string
+	deviceName  string
+	appToken    string
+	httpClient  *http.Client
 
 	mu         sync.Mutex
 	session    string
 	sessionExp time.Time
 }
 
-func NewClient(opt ClientOptions) *Client {
-	c := opt.HTTPClient
+// normalizeAPIBaseURL ensures the base URL starts and ends with a forward slash
+// to avoid malformed URLs like ".../apiv4/".
+func normalizeAPIBaseURL(baseURL string) string {
+	if !strings.HasPrefix(baseURL, "/") {
+		baseURL = "/" + baseURL
+	}
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL = baseURL + "/"
+	}
+	return baseURL
+}
+
+// NewClient creates a new Freebox API client by discovering the Freebox on the
+// local network using mDNS. It automatically retrieves the API domain, base URL,
+// and version from the Freebox's mDNS service announcement.
+// The client uses Freebox-specific CA certificates to validate HTTPS connections.
+func NewClient(ctx context.Context, opt ClientOptions) (*Client, error) {
+	// Discover Freebox API information using mDNS
+	disc, err := Discover(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("freebox discovery: %w", err)
+	}
+
+	// Respect the https_available flag from mDNS
+	// If HTTPS is unavailable and user didn't opt into InsecureHTTP, fail fast
+	if !disc.HTTPSAvailable && !opt.InsecureHTTP {
+		return nil, errors.New("freebox: HTTPS is not available on the Freebox and InsecureHTTP is not enabled")
+	}
+
+	// Build the full base URL: scheme + host + port + api_base_url + version
+	// e.g., "https://example.fbxos.fr:3615/api/v4/"
+	scheme := "https"
+	port := disc.HTTPSPort
+	if opt.InsecureHTTP {
+		scheme = "http"
+		// In insecure mode, prefer standard HTTP port (80) over discovered HTTPS port
+		// to avoid attempting HTTP on the HTTPS port (e.g., http://host:3615/)
+		if port == 0 {
+			port = 80
+		}
+		// If a specific https_port was advertised, don't use it for HTTP
+		if port != 0 && port != 80 {
+			port = 80
+		}
+	} else if port == 0 {
+		port = 443
+	}
+
+	fullBaseURL := scheme + "://" + strings.TrimSuffix(disc.APIDomain, ".")
+	if port != 0 && ((scheme == "https" && port != 443) || (scheme == "http" && port != 80)) {
+		fullBaseURL += ":" + strconv.Itoa(port)
+	}
+	// Extract major version (e.g., "4.0" -> "4", "v4.0" -> "4")
+	majorVer, _, _ := strings.Cut(disc.APIVersion, ".")
+	majorVer = strings.TrimPrefix(majorVer, "v")
+	// Normalize and construct the full base URL
+	fullBaseURL += normalizeAPIBaseURL(disc.APIBaseURL) + "v" + majorVer + "/"
+
+	// Create HTTP client with Freebox CA certificates
+	// Clone everything to avoid mutating caller-provided client/transport
+	var httpClient *http.Client
+	if opt.HTTPClient != nil {
+		// Clone the provided client to avoid mutation
+		httpClient = &http.Client{
+			Timeout:       opt.HTTPClient.Timeout,
+			CheckRedirect: opt.HTTPClient.CheckRedirect,
+			Jar:           opt.HTTPClient.Jar,
+		}
+		// Clone transport and apply Freebox CA for HTTPS, or just clone for HTTP
+		if opt.HTTPClient.Transport != nil {
+			if tr, ok := opt.HTTPClient.Transport.(*http.Transport); ok {
+				transport := tr.Clone()
+				if scheme == "https" {
+					if transport.TLSClientConfig == nil {
+						transport.TLSClientConfig = &tls.Config{}
+					}
+					transport.TLSClientConfig.RootCAs = certPool
+				}
+				httpClient.Transport = transport
+			} else {
+				return nil, errors.New("freebox: custom HTTP client has non-*http.Transport type; cannot configure TLS")
+			}
+		} else {
+			// Clone default transport
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			if scheme == "https" {
+				if transport.TLSClientConfig == nil {
+					transport.TLSClientConfig = &tls.Config{}
+				}
+				transport.TLSClientConfig.RootCAs = certPool
+			}
+			httpClient.Transport = transport
+		}
+	} else {
+		// Create new client with cloned default transport
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		if scheme == "https" {
+			if transport.TLSClientConfig == nil {
+				transport.TLSClientConfig = &tls.Config{}
+			}
+			transport.TLSClientConfig.RootCAs = certPool
+		}
+		httpClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: transport,
+		}
+	}
+
+	return newClient(ClientParams{
+		FullBaseURL: fullBaseURL,
+		HTTPClient:  httpClient,
+		ClientOptions: opt,
+	}), nil
+}
+
+// ClientParams holds all parameters needed to create a Client, including the
+// full base URL (scheme + host + port + api_base_url + version). Used internally
+// and for testing.
+type ClientParams struct {
+	FullBaseURL string
+	HTTPClient  *http.Client // optional; if nil, ClientOptions.HTTPClient is used
+	ClientOptions
+}
+
+// newClient is the internal constructor that creates a Client with explicit
+// API endpoint parameters. Used by NewClient and tests.
+func newClient(params ClientParams) *Client {
+	c := params.HTTPClient
+	if c == nil {
+		c = params.ClientOptions.HTTPClient
+	}
 	if c == nil {
 		c = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Client{opt: opt, httpClient: c}
+	return &Client{
+		fullBaseURL: params.FullBaseURL,
+		appID:       params.AppID,
+		appName:     params.AppName,
+		appVersion:  params.AppVersion,
+		deviceName:  params.DeviceName,
+		appToken:    params.AppToken,
+		httpClient:  c,
+	}
 }
 
 // SetAppToken updates the app_token used for session authentication. Useful
@@ -60,7 +205,7 @@ func (c *Client) SetAppToken(token string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.opt.AppToken = token
+	c.appToken = token
 	c.session = ""
 	c.sessionExp = time.Time{}
 }
@@ -114,6 +259,10 @@ func (c *Client) doAuth(ctx context.Context, method, path string, body any, out 
 }
 
 func (c *Client) buildRequest(ctx context.Context, method, path string, body any) (*http.Request, error) {
+	// fullBaseURL already contains scheme + host + port + api_base_url + version +
+	// trailing slash, e.g., "https://example.fbxos.fr:3615/api/v4/"
+	fullURL := c.fullBaseURL + strings.TrimPrefix(path, "/")
+
 	var rdr io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
@@ -123,7 +272,7 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 		rdr = bytes.NewReader(buf)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.opt.BaseURL+path, rdr)
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, rdr)
 	if err != nil {
 		return nil, err
 	}

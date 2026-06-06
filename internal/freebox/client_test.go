@@ -347,64 +347,80 @@ func TestListHosts(t *testing.T) {
 // --- helpers ----------------------------------------------------------------
 
 func newTestClient(fs *fakeServer, appToken string) *Client {
-	return NewClient(ClientOptions{
-		BaseURL:    fs.server.URL,
-		AppID:      "test.app",
-		AppName:    "Test App",
-		AppVersion: "1.0",
-		DeviceName: "host",
-		AppToken:   appToken,
-		HTTPClient: fs.server.Client(),
+	return newClient(ClientParams{
+		FullBaseURL: fs.server.URL + "/api/v4/",
+		ClientOptions: ClientOptions{
+			AppID:      "test.app",
+			AppName:    "Test App",
+			AppVersion: "1.0",
+			DeviceName: "host",
+			AppToken:   appToken,
+			HTTPClient: fs.server.Client(),
+		},
 	})
 }
 
 // --- SetAppToken ------------------------------------------------------------
 
 func TestSetAppToken(t *testing.T) {
-	c := NewClient(ClientOptions{
-		BaseURL:  "http://localhost",
-		AppID:    "test.app",
-		AppName:  "Test App",
-		AppToken: "initial-token",
+	c := newClient(ClientParams{
+		FullBaseURL: "http://localhost/api/v4/",
+		ClientOptions: ClientOptions{
+			AppID:    "test.app",
+			AppName:  "Test App",
+			AppToken: "initial-token",
+		},
 	})
 
 	// Set up an existing session to verify reset behavior
+	c.mu.Lock()
 	c.session = "existing-session-token"
 	c.sessionExp = time.Now().Add(time.Hour)
+	c.mu.Unlock()
 
 	// Verify initial state
-	assert.Equal(t, "initial-token", c.opt.AppToken)
+	assert.Equal(t, "initial-token", c.appToken)
+	c.mu.Lock()
 	assert.Equal(t, "existing-session-token", c.session)
 	assert.NotEqual(t, time.Time{}, c.sessionExp)
+	c.mu.Unlock()
 
 	// Set new token
 	c.SetAppToken("new-token")
 
 	// Verify token was updated and session was reset
-	assert.Equal(t, "new-token", c.opt.AppToken)
+	assert.Equal(t, "new-token", c.appToken)
+	c.mu.Lock()
 	assert.Equal(t, "", c.session)
 	assert.Equal(t, time.Time{}, c.sessionExp)
+	c.mu.Unlock()
 }
 
 func TestSetAppToken_EmptyToken(t *testing.T) {
-	c := NewClient(ClientOptions{
-		BaseURL:  "http://localhost",
-		AppID:    "test.app",
-		AppName:  "Test App",
-		AppToken: "initial-token",
+	c := newClient(ClientParams{
+		FullBaseURL: "http://localhost/api/v4/",
+		ClientOptions: ClientOptions{
+			AppID:    "test.app",
+			AppName:  "Test App",
+			AppToken: "initial-token",
+		},
 	})
 
 	// Set up an existing session to verify reset behavior
+	c.mu.Lock()
 	c.session = "existing-session-token"
 	c.sessionExp = time.Now().Add(time.Hour)
+	c.mu.Unlock()
 
 	// Set empty token
 	c.SetAppToken("")
 
 	// Verify token was updated and session was reset
-	assert.Equal(t, "", c.opt.AppToken)
+	assert.Equal(t, "", c.appToken)
+	c.mu.Lock()
 	assert.Equal(t, "", c.session)
 	assert.Equal(t, time.Time{}, c.sessionExp)
+	c.mu.Unlock()
 }
 
 // --- APIError.Error ---------------------------------------------------------

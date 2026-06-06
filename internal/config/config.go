@@ -23,7 +23,6 @@ type Config struct {
 }
 
 type Freebox struct {
-	APIDomain    string `toml:"api_domain"`
 	AppID        string `toml:"app_id"`
 	AppName      string `toml:"app_name"`
 	AppVersion   string `toml:"app_version"`
@@ -61,9 +60,7 @@ type Poller struct {
 func Load(path string) (*Config, error) {
 	// 1. Create a config with all default values
 	cfg := &Config{
-		Freebox: Freebox{
-			APIDomain: "mafreebox.freebox.fr",
-		},
+		Freebox: Freebox{},
 		DNS: DNS{
 			Listen:      "0.0.0.0:53",
 			TTL:         5 * time.Minute,
@@ -117,9 +114,6 @@ func Load(path string) (*Config, error) {
 
 func validate(cfg *Config) error {
 	// Validate Freebox (all fields required)
-	if cfg.Freebox.APIDomain == "" {
-		return errors.New("freebox.api_domain must be non-empty")
-	}
 	if cfg.Freebox.AppID == "" {
 		return errors.New("freebox.app_id is required")
 	}

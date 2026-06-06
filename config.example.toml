@@ -3,8 +3,8 @@
 # Save under /etc/freebox-ptr-dns/config.toml (or pass -config /path/to.toml).
 
 [freebox]
-# Hostname or IP of the Freebox API. Default is the local-discovery name.
-api_domain  = "mafreebox.freebox.fr"
+# Freebox API information is discovered automatically via mDNS.
+# No manual configuration needed for api_domain, api_base_url, or api_version.
 
 # Identifier shown in the Freebox "Authorized apps" panel. Use reverse DNS.
 app_id      = "fr.example.freebox_ptr_dns"

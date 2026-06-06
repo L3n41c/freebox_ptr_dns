@@ -46,6 +46,20 @@ These guidelines help ensure consistency, security, and maintainability.
   - Verification checklist (tests, documentation, etc.)
 - **Labels**: Add appropriate labels (`enhancement`, `bug`, `documentation`, etc.)
 
+### Shell Command Safety
+- **Use single quotes (`'`) for git/gh command messages** – When passing commit messages, PR titles, or descriptions, prefer single quotes to prevent shell interpretation of special characters (especially backticks). **Avoid double quotes** as they allow shell expansion, causing backticks to be treated as command substitutions.
+- **For messages containing apostrophes** (`'`):
+  - Use message files: `git commit -F commit_msg.txt` or `gh pr create --body-file pr_body.md` (safest)
+  - Or escape the apostrophe: `git commit -m $'feat: fix user\'s profile'
+- **Example** (safe with backticks):
+  ```bash
+  git commit -m 'feat: add `new` feature'
+  ```
+  **NOT** (DANGEROUS - shell tries to execute `new` as command):
+  ```bash
+  git commit -m "feat: add `new` feature"
+  ```
+
 ---
 
 ## ⚙️ Project Configuration
@@ -103,9 +117,9 @@ git checkout -b feat/my-new-feature
 ```bash
 # After pushing the branch
 gh pr create --base main --head feat/my-new-feature \
-  --title "feat: my new feature" \
-  --body "Description of changes..." \
-  --label "enhancement"
+  --title 'feat: my new feature' \
+  --body 'Description of changes...' \
+  --label 'enhancement'
 ```
 
 ### Run local tests
@@ -138,7 +152,7 @@ make dist            # Build for all architectures
 
 3. **Make atomic commits**:
    ```bash
-   git commit -m "feat: add YYY"
+   git commit -m 'feat: add YYY'
    ```
 
 4. **Push branch**:

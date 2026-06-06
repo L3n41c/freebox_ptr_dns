@@ -184,3 +184,95 @@ func TestHandler_NxDomainHasSOA(t *testing.T) {
 	require.True(t, ok, "authority[0] should be *SOA")
 	assert.Greater(t, soa.Minttl, uint32(0), "SOA MinTTL should be > 0 for negative caching")
 }
+
+// --- NewServer -------------------------------------------------------------
+
+func TestNewServer(t *testing.T) {
+	cache := hosts.NewCache()
+	h := NewHandler(cache, 300*time.Second, []netip.Prefix{})
+	s := NewServer("127.0.0.1:5353", h)
+
+	// Verify the server was created with correct configuration
+	require.NotNil(t, s)
+	require.NotNil(t, s.udp)
+	require.NotNil(t, s.tcp)
+	assert.Equal(t, "127.0.0.1:5353", s.udp.Addr)
+	assert.Equal(t, "udp", s.udp.Net)
+	assert.Equal(t, "127.0.0.1:5353", s.tcp.Addr)
+	assert.Equal(t, "tcp", s.tcp.Net)
+	assert.Equal(t, s.udp.Handler, s.tcp.Handler)
+}
+
+// --- Handler.allows --------------------------------------------------------
+
+func TestHandler_Allows(t *testing.T) {
+	tests := []struct {
+		name       string
+		allowed    []netip.Prefix
+		addr       string
+		want       bool
+	}{
+		{
+			name:    "IPv4 in allowed prefix",
+			allowed: []netip.Prefix{netip.MustParsePrefix("192.168.0.0/16")},
+			addr:    "192.168.1.42",
+			want:    true,
+		},
+		{
+			name:    "IPv4 not in allowed prefix",
+			allowed: []netip.Prefix{netip.MustParsePrefix("192.168.0.0/16")},
+			addr:    "10.0.0.1",
+			want:    false,
+		},
+		{
+			name:    "IPv6 in allowed prefix",
+			allowed: []netip.Prefix{netip.MustParsePrefix("fd00::/8")},
+			addr:    "fd00::1",
+			want:    true,
+		},
+		{
+			name:    "IPv6 not in allowed prefix",
+			allowed: []netip.Prefix{netip.MustParsePrefix("fd00::/8")},
+			addr:    "2001:db8::1",
+			want:    false,
+		},
+		{
+			name:    "empty allowed list allows all",
+			allowed: []netip.Prefix{},
+			addr:    "8.8.8.8",
+			want:    true,
+		},
+		{
+			name:    "multiple prefixes",
+			allowed: []netip.Prefix{
+				netip.MustParsePrefix("10.0.0.0/8"),
+				netip.MustParsePrefix("172.16.0.0/12"),
+				netip.MustParsePrefix("192.168.0.0/16"),
+			},
+			addr: "172.31.255.255",
+			want: true,
+		},
+		{
+			name:    "exact boundary IPv4",
+			allowed: []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")},
+			addr:    "192.168.1.0",
+			want:    true,
+		},
+		{
+			name:    "just outside boundary IPv4",
+			allowed: []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")},
+			addr:    "192.168.2.0",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := hosts.NewCache()
+			h := NewHandler(cache, 300*time.Second, tt.allowed)
+			addr := netip.MustParseAddr(tt.addr)
+			got := h.allows(addr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

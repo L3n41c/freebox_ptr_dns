@@ -209,8 +209,13 @@ func TestPoller_Run_CallsOnRefreshSuccess(t *testing.T) {
 	cache := NewCache()
 	p := NewPoller(api, cache, "lan", 100*time.Millisecond)
 
-	var called bool
-	p.OnRefreshSuccess = func() { called = true }
+	called := make(chan struct{}, 1)
+	p.OnRefreshSuccess = func() {
+		select {
+		case called <- struct{}{}:
+		default:
+		}
+	}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -218,9 +223,13 @@ func TestPoller_Run_CallsOnRefreshSuccess(t *testing.T) {
 		done <- p.Run(ctx)
 	}()
 
-	// Wait long enough for at least one successful refresh
-	time.Sleep(200 * time.Millisecond)
-	cancel()
+	select {
+	case <-called:
+		cancel()
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("OnRefreshSuccess should have been called")
+	}
 
 	select {
 	case <-done:
@@ -228,7 +237,6 @@ func TestPoller_Run_CallsOnRefreshSuccess(t *testing.T) {
 		t.Fatal("Run did not return")
 	}
 
-	assert.True(t, called, "OnRefreshSuccess should have been called")
 }
 
 func TestPoller_Run_BackoffOnError(t *testing.T) {

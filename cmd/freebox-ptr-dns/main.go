@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -73,22 +72,14 @@ func run(configPath string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	httpClient := &http.Client{
-		Timeout: cfg.Poller.HTTPTimeout,
-		Transport: &http.Transport{
-			MaxIdleConns:    2,
-			IdleConnTimeout: 90 * time.Second,
-		},
-	}
-
 	// Create the Freebox client - it will automatically discover the Freebox via mDNS
+	// and create its own HTTP client with Freebox CA certificates
 	client, err := freebox.NewClient(ctx, freebox.ClientOptions{
 		AppID:        cfg.Freebox.AppID,
 		AppName:      cfg.Freebox.AppName,
 		AppVersion:   cfg.Freebox.AppVersion,
 		DeviceName:   cfg.Freebox.DeviceName,
-		HTTPClient:   httpClient,
-		InsecureHTTP: cfg.Freebox.InsecureHTTP,
+		HTTPTimeout:  cfg.Poller.HTTPTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf("create freebox client: %w", err)

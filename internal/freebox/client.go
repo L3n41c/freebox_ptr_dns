@@ -31,13 +31,12 @@ var ErrAuthorizationDenied = errors.New("freebox: authorization denied")
 var ErrAuthorizationTimedOut = errors.New("freebox: authorization timed out")
 
 type ClientOptions struct {
-	AppID        string
-	AppName      string
-	AppVersion   string
-	DeviceName   string
-	AppToken     string       // empty when registering
-	HTTPClient   *http.Client // optional; defaults to a sensible client
-	InsecureHTTP bool         // opt-in: send tokens over plain HTTP
+	AppID       string
+	AppName     string
+	AppVersion  string
+	DeviceName  string
+	AppToken    string        // empty when registering
+	HTTPTimeout time.Duration // HTTP client timeout; defaults to 10s
 }
 
 type Client struct {
@@ -70,6 +69,7 @@ func normalizeAPIBaseURL(baseURL string) string {
 // local network using mDNS. It automatically retrieves the API domain, base URL,
 // and version from the Freebox's mDNS service announcement.
 // The client uses Freebox-specific CA certificates to validate HTTPS connections.
+// HTTPS is always used; if the Freebox does not advertise HTTPS support, an error is returned.
 func NewClient(ctx context.Context, opt ClientOptions) (*Client, error) {
 	// Discover Freebox API information using mDNS
 	disc, err := Discover(ctx)
@@ -77,94 +77,27 @@ func NewClient(ctx context.Context, opt ClientOptions) (*Client, error) {
 		return nil, fmt.Errorf("freebox discovery: %w", err)
 	}
 
-	// Respect the https_available flag from mDNS
-	// If HTTPS is unavailable and user didn't opt into InsecureHTTP, fail fast
-	if !disc.HTTPSAvailable && !opt.InsecureHTTP {
-		return nil, errors.New("freebox: HTTPS is not available on the Freebox and InsecureHTTP is not enabled")
+	// HTTPS is mandatory for security (tokens are sent over the connection)
+	if !disc.HTTPSAvailable {
+		return nil, errors.New("freebox: HTTPS is not available on the Freebox")
 	}
 
-	// Build the full base URL: scheme + host + port + api_base_url + version
+	// Build the full base URL: always use HTTPS
 	// e.g., "https://example.fbxos.fr:3615/api/v4/"
-	scheme := "https"
-	port := disc.HTTPSPort
-	if opt.InsecureHTTP {
-		scheme = "http"
-		// In insecure mode, prefer standard HTTP port (80) over discovered HTTPS port
-		// to avoid attempting HTTP on the HTTPS port (e.g., http://host:3615/)
-		if port == 0 {
-			port = 80
-		}
-		// If a specific https_port was advertised, don't use it for HTTP
-		if port != 0 && port != 80 {
-			port = 80
-		}
-	} else if port == 0 {
-		port = 443
+	fullBaseURL := "https://" + strings.TrimSuffix(disc.APIDomain, ".")
+	if disc.HTTPSPort != 0 {
+		fullBaseURL += ":" + strconv.Itoa(disc.HTTPSPort)
 	}
 
-	fullBaseURL := scheme + "://" + strings.TrimSuffix(disc.APIDomain, ".")
-	if port != 0 && ((scheme == "https" && port != 443) || (scheme == "http" && port != 80)) {
-		fullBaseURL += ":" + strconv.Itoa(port)
-	}
 	// Extract major version (e.g., "4.0" -> "4", "v4.0" -> "4")
 	majorVer, _, _ := strings.Cut(disc.APIVersion, ".")
 	majorVer = strings.TrimPrefix(majorVer, "v")
 	// Normalize and construct the full base URL
 	fullBaseURL += normalizeAPIBaseURL(disc.APIBaseURL) + "v" + majorVer + "/"
 
-	// Create HTTP client with Freebox CA certificates
-	// Clone everything to avoid mutating caller-provided client/transport
-	var httpClient *http.Client
-	if opt.HTTPClient != nil {
-		// Clone the provided client to avoid mutation
-		httpClient = &http.Client{
-			Timeout:       opt.HTTPClient.Timeout,
-			CheckRedirect: opt.HTTPClient.CheckRedirect,
-			Jar:           opt.HTTPClient.Jar,
-		}
-		// Clone transport and apply Freebox CA for HTTPS, or just clone for HTTP
-		if opt.HTTPClient.Transport != nil {
-			if tr, ok := opt.HTTPClient.Transport.(*http.Transport); ok {
-				transport := tr.Clone()
-				if scheme == "https" {
-					if transport.TLSClientConfig == nil {
-						transport.TLSClientConfig = &tls.Config{}
-					}
-					transport.TLSClientConfig.RootCAs = certPool
-				}
-				httpClient.Transport = transport
-			} else {
-				return nil, errors.New("freebox: custom HTTP client has non-*http.Transport type; cannot configure TLS")
-			}
-		} else {
-			// Clone default transport
-			transport := http.DefaultTransport.(*http.Transport).Clone()
-			if scheme == "https" {
-				if transport.TLSClientConfig == nil {
-					transport.TLSClientConfig = &tls.Config{}
-				}
-				transport.TLSClientConfig.RootCAs = certPool
-			}
-			httpClient.Transport = transport
-		}
-	} else {
-		// Create new client with cloned default transport
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		if scheme == "https" {
-			if transport.TLSClientConfig == nil {
-				transport.TLSClientConfig = &tls.Config{}
-			}
-			transport.TLSClientConfig.RootCAs = certPool
-		}
-		httpClient = &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: transport,
-		}
-	}
-
+	// newClient will create the HTTP client with Freebox CA certificates and configured timeout
 	return newClient(ClientParams{
-		FullBaseURL: fullBaseURL,
-		HTTPClient:  httpClient,
+		FullBaseURL:   fullBaseURL,
 		ClientOptions: opt,
 	}), nil
 }
@@ -174,20 +107,29 @@ func NewClient(ctx context.Context, opt ClientOptions) (*Client, error) {
 // and for testing.
 type ClientParams struct {
 	FullBaseURL string
-	HTTPClient  *http.Client // optional; if nil, ClientOptions.HTTPClient is used
 	ClientOptions
 }
 
 // newClient is the internal constructor that creates a Client with explicit
 // API endpoint parameters. Used by NewClient and tests.
 func newClient(params ClientParams) *Client {
-	c := params.HTTPClient
-	if c == nil {
-		c = params.ClientOptions.HTTPClient
+	// Create HTTP client with Freebox CA certificates and configured timeout
+	timeout := params.HTTPTimeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
 	}
-	if c == nil {
-		c = &http.Client{Timeout: 10 * time.Second}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
 	}
+	transport.TLSClientConfig.RootCAs = certPool
+
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
+
 	return &Client{
 		fullBaseURL: params.FullBaseURL,
 		appID:       params.AppID,
@@ -195,7 +137,7 @@ func newClient(params ClientParams) *Client {
 		appVersion:  params.AppVersion,
 		deviceName:  params.DeviceName,
 		appToken:    params.AppToken,
-		httpClient:  c,
+		httpClient:  httpClient,
 	}
 }
 

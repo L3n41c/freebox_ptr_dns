@@ -350,12 +350,12 @@ func newTestClient(fs *fakeServer, appToken string) *Client {
 	return newClient(ClientParams{
 		FullBaseURL: fs.server.URL + "/api/v4/",
 		ClientOptions: ClientOptions{
-			AppID:      "test.app",
-			AppName:    "Test App",
-			AppVersion: "1.0",
-			DeviceName: "host",
-			AppToken:   appToken,
-			HTTPClient: fs.server.Client(),
+			AppID:        "test.app",
+			AppName:      "Test App",
+			AppVersion:   "1.0",
+			DeviceName:   "host",
+			AppToken:     appToken,
+			HTTPTimeout:  time.Second,
 		},
 	})
 }
@@ -364,11 +364,12 @@ func newTestClient(fs *fakeServer, appToken string) *Client {
 
 func TestSetAppToken(t *testing.T) {
 	c := newClient(ClientParams{
-		FullBaseURL: "http://localhost/api/v4/",
+		FullBaseURL: "https://localhost/api/v4/",
 		ClientOptions: ClientOptions{
-			AppID:    "test.app",
-			AppName:  "Test App",
-			AppToken: "initial-token",
+			AppID:        "test.app",
+			AppName:      "Test App",
+			AppToken:     "initial-token",
+			HTTPTimeout:  time.Second,
 		},
 	})
 
@@ -398,11 +399,12 @@ func TestSetAppToken(t *testing.T) {
 
 func TestSetAppToken_EmptyToken(t *testing.T) {
 	c := newClient(ClientParams{
-		FullBaseURL: "http://localhost/api/v4/",
+		FullBaseURL: "https://localhost/api/v4/",
 		ClientOptions: ClientOptions{
-			AppID:    "test.app",
-			AppName:  "Test App",
-			AppToken: "initial-token",
+			AppID:        "test.app",
+			AppName:      "Test App",
+			AppToken:     "initial-token",
+			HTTPTimeout:  time.Second,
 		},
 	})
 

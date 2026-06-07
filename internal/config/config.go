@@ -23,12 +23,11 @@ type Config struct {
 }
 
 type Freebox struct {
-	AppID        string `toml:"app_id"`
-	AppName      string `toml:"app_name"`
-	AppVersion   string `toml:"app_version"`
-	DeviceName   string `toml:"device_name"`
-	TokenPath    string `toml:"token_path"`
-	InsecureHTTP bool   `toml:"insecure_http"` // opt-in: send tokens over plain HTTP
+	AppID      string `toml:"app_id"`
+	AppName    string `toml:"app_name"`
+	AppVersion string `toml:"app_version"`
+	DeviceName string `toml:"device_name"`
+	TokenPath  string `toml:"token_path"`
 }
 
 // LocalDomain is a local DNS domain for PTR record suffixes.

@@ -23,13 +23,11 @@ type Config struct {
 }
 
 type Freebox struct {
-	APIDomain    string `toml:"api_domain"`
-	AppID        string `toml:"app_id"`
-	AppName      string `toml:"app_name"`
-	AppVersion   string `toml:"app_version"`
-	DeviceName   string `toml:"device_name"`
-	TokenPath    string `toml:"token_path"`
-	InsecureHTTP bool   `toml:"insecure_http"` // opt-in: send tokens over plain HTTP
+	AppID      string `toml:"app_id"`
+	AppName    string `toml:"app_name"`
+	AppVersion string `toml:"app_version"`
+	DeviceName string `toml:"device_name"`
+	TokenPath  string `toml:"token_path"`
 }
 
 // LocalDomain is a local DNS domain for PTR record suffixes.
@@ -61,9 +59,7 @@ type Poller struct {
 func Load(path string) (*Config, error) {
 	// 1. Create a config with all default values
 	cfg := &Config{
-		Freebox: Freebox{
-			APIDomain: "mafreebox.freebox.fr",
-		},
+		Freebox: Freebox{},
 		DNS: DNS{
 			Listen:      "0.0.0.0:53",
 			TTL:         5 * time.Minute,
@@ -117,9 +113,6 @@ func Load(path string) (*Config, error) {
 
 func validate(cfg *Config) error {
 	// Validate Freebox (all fields required)
-	if cfg.Freebox.APIDomain == "" {
-		return errors.New("freebox.api_domain must be non-empty")
-	}
 	if cfg.Freebox.AppID == "" {
 		return errors.New("freebox.app_id is required")
 	}

@@ -37,7 +37,6 @@ func TestLoad(t *testing.T) {
 		{
 			name: "full config",
 			config: `[freebox]
-api_domain   = "mafreebox.freebox.fr"
 app_id       = "fr.test.app"
 app_name     = "Test App"
 app_version  = "1.2"
@@ -56,7 +55,6 @@ http_timeout     = "10s"`,
 			wantErr: false,
 			expected: &Config{
 				Freebox: Freebox{
-					APIDomain:  "mafreebox.freebox.fr",
 					AppID:      "fr.test.app",
 					AppName:    "Test App",
 					AppVersion: "1.2",
@@ -89,7 +87,6 @@ token_path  = "/tmp/token"`,
 			wantErr: false,
 			expected: &Config{
 				Freebox: Freebox{
-					APIDomain:  "mafreebox.freebox.fr",
 					AppID:      "fr.test.app",
 					AppName:    "Test App",
 					AppVersion: "1.0",
@@ -128,7 +125,6 @@ local_domain = ""`,
 			wantErr: false,
 			expected: &Config{
 				Freebox: Freebox{
-					APIDomain:  "mafreebox.freebox.fr",
 					AppID:      "x",
 					AppName:    "x",
 					AppVersion: "1",
@@ -242,18 +238,6 @@ listen = "no-port-here"`,
 			name:     "file not found",
 			filePath: "/nonexistent/path/config.toml",
 			wantErr:  true,
-		},
-		{
-			name: "rejects empty api_domain",
-			config: `[freebox]
-api_domain = ""
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
-token_path="/tmp/t"`,
-			wantErr:       true,
-			wantErrSubstr: "api_domain",
 		},
 		{
 			name: "rejects empty allowed_networks",

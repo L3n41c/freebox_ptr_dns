@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -73,27 +72,18 @@ func run(configPath string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	httpClient := &http.Client{
-		Timeout: cfg.Poller.HTTPTimeout,
-		Transport: &http.Transport{
-			MaxIdleConns:    2,
-			IdleConnTimeout: 90 * time.Second,
-		},
-	}
-
-	scheme := "https://"
-	if cfg.Freebox.InsecureHTTP {
-		scheme = "http://"
-		slog.Warn("using HTTP for Freebox API: app_token and session tokens travel in cleartext on the LAN")
-	}
-	client := freebox.NewClient(freebox.ClientOptions{
-		BaseURL:    scheme + cfg.Freebox.APIDomain,
-		AppID:      cfg.Freebox.AppID,
-		AppName:    cfg.Freebox.AppName,
-		AppVersion: cfg.Freebox.AppVersion,
-		DeviceName: cfg.Freebox.DeviceName,
-		HTTPClient: httpClient,
+	// Create the Freebox client - it will automatically discover the Freebox via mDNS
+	// and create its own HTTP client with Freebox CA certificates
+	client, err := freebox.NewClient(ctx, freebox.ClientOptions{
+		AppID:        cfg.Freebox.AppID,
+		AppName:      cfg.Freebox.AppName,
+		AppVersion:   cfg.Freebox.AppVersion,
+		DeviceName:   cfg.Freebox.DeviceName,
+		HTTPTimeout:  cfg.Poller.HTTPTimeout,
 	})
+	if err != nil {
+		return fmt.Errorf("create freebox client: %w", err)
+	}
 
 	token, err := freebox.LoadToken(cfg.Freebox.TokenPath)
 	if errors.Is(err, os.ErrNotExist) {

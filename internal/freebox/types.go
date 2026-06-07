@@ -6,7 +6,7 @@ package freebox
 
 import "encoding/json"
 
-// envelope is the common response shape for /api/v4/... endpoints.
+// envelope is the common response shape for Freebox API endpoints.
 type envelope struct {
 	Success   bool            `json:"success"`
 	Result    json.RawMessage `json:"result,omitempty"`
@@ -44,7 +44,7 @@ type sessionResult struct {
 }
 
 // LanInterface is one of the "browsable" LAN interfaces returned by
-// GET /api/v4/lan/browser/interfaces/.
+// GET lan/browser/interfaces/.
 type LanInterface struct {
 	Name      string `json:"name"`
 	HostCount int    `json:"host_count"`

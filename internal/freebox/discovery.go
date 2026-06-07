@@ -50,11 +50,14 @@ func Discover(ctx context.Context) (DiscoveryResult, error) {
 
 	// Create a context with timeout
 	discCtx, cancel := context.WithTimeout(ctx, discoverTimeout)
-	defer cancel()
 
 	// Start searching for the Freebox API service
 	entries := make(chan *zeroconf.ServiceEntry, 1)
 	browseErr := make(chan error, 1)
+	defer func() {
+		cancel()
+		close(browseErr)
+	}()
 	go func() {
 		if err := resolver.Browse(discCtx, serviceName, "local.", entries); err != nil {
 			browseErr <- err
@@ -76,19 +79,6 @@ func Discover(ctx context.Context) (DiscoveryResult, error) {
 		if !ok {
 			return DiscoveryResult{}, ErrDiscoveryFailed
 		}
-		// Cancel immediately to avoid goroutine leak
-		cancel()
-		// Drain remaining entries to prevent sender block
-		go func() {
-			for {
-				select {
-				case <-entries:
-					// Drain
-				case <-discCtx.Done():
-					return
-				}
-			}
-		}()
 		return parseServiceEntry(entry)
 	}
 }

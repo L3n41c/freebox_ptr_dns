@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -346,10 +347,18 @@ func TestListHosts(t *testing.T) {
 
 // --- helpers ----------------------------------------------------------------
 
+func mustParseURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
 func newTestClient(fs *fakeServer, appToken string) *Client {
-	return newClient(ClientParams{
-		FullBaseURL: fs.server.URL + "/api/v4/",
-		ClientOptions: ClientOptions{
+	return newClient(
+		mustParseURL(fs.server.URL + "/api/v4/"),
+		ClientOptions{
 			AppID:        "test.app",
 			AppName:      "Test App",
 			AppVersion:   "1.0",
@@ -357,21 +366,21 @@ func newTestClient(fs *fakeServer, appToken string) *Client {
 			AppToken:     appToken,
 			HTTPTimeout:  time.Second,
 		},
-	})
+	)
 }
 
 // --- SetAppToken ------------------------------------------------------------
 
 func TestSetAppToken(t *testing.T) {
-	c := newClient(ClientParams{
-		FullBaseURL: "https://localhost/api/v4/",
-		ClientOptions: ClientOptions{
+	c := newClient(
+		mustParseURL("https://localhost/api/v4/"),
+		ClientOptions{
 			AppID:        "test.app",
 			AppName:      "Test App",
 			AppToken:     "initial-token",
 			HTTPTimeout:  time.Second,
 		},
-	})
+	)
 
 	// Set up an existing session to verify reset behavior
 	c.mu.Lock()
@@ -398,15 +407,15 @@ func TestSetAppToken(t *testing.T) {
 }
 
 func TestSetAppToken_EmptyToken(t *testing.T) {
-	c := newClient(ClientParams{
-		FullBaseURL: "https://localhost/api/v4/",
-		ClientOptions: ClientOptions{
+	c := newClient(
+		mustParseURL("https://localhost/api/v4/"),
+		ClientOptions{
 			AppID:        "test.app",
 			AppName:      "Test App",
 			AppToken:     "initial-token",
 			HTTPTimeout:  time.Second,
 		},
-	})
+	)
 
 	// Set up an existing session to verify reset behavior
 	c.mu.Lock()

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,29 +41,17 @@ type ClientOptions struct {
 }
 
 type Client struct {
-	fullBaseURL string // e.g. "https://example.fbxos.fr:3615/api/v4/"
-	appID       string
-	appName     string
-	appVersion  string
-	deviceName  string
-	appToken    string
-	httpClient  *http.Client
+	baseURL    *url.URL // e.g. "https://example.fbxos.fr:3615/api/v4/"
+	appID      string
+	appName    string
+	appVersion string
+	deviceName string
+	appToken   string
+	httpClient *http.Client
 
 	mu         sync.Mutex
 	session    string
 	sessionExp time.Time
-}
-
-// normalizeAPIBaseURL ensures the base URL starts and ends with a forward slash
-// to avoid malformed URLs like ".../apiv4/".
-func normalizeAPIBaseURL(baseURL string) string {
-	if !strings.HasPrefix(baseURL, "/") {
-		baseURL = "/" + baseURL
-	}
-	if !strings.HasSuffix(baseURL, "/") {
-		baseURL = baseURL + "/"
-	}
-	return baseURL
 }
 
 // NewClient creates a new Freebox API client by discovering the Freebox on the
@@ -82,39 +71,30 @@ func NewClient(ctx context.Context, opt ClientOptions) (*Client, error) {
 		return nil, errors.New("freebox: HTTPS is not available on the Freebox")
 	}
 
-	// Build the full base URL: always use HTTPS
+	// Build the base URL: always use HTTPS
 	// e.g., "https://example.fbxos.fr:3615/api/v4/"
-	fullBaseURL := "https://" + strings.TrimSuffix(disc.APIDomain, ".")
+	u := &url.URL{
+		Scheme: "https",
+		Host:   disc.APIDomain,
+	}
 	if disc.HTTPSPort != 0 {
-		fullBaseURL += ":" + strconv.Itoa(disc.HTTPSPort)
+		u.Host += ":" + strconv.Itoa(disc.HTTPSPort)
 	}
 
-	// Extract major version (e.g., "4.0" -> "4", "v4.0" -> "4")
+	// Extract major version (e.g., "4.0" -> "4")
 	majorVer, _, _ := strings.Cut(disc.APIVersion, ".")
-	majorVer = strings.TrimPrefix(majorVer, "v")
-	// Normalize and construct the full base URL
-	fullBaseURL += normalizeAPIBaseURL(disc.APIBaseURL) + "v" + majorVer + "/"
+	// Construct the full base URL using JoinPath
+	u = u.JoinPath(disc.APIBaseURL, "v"+majorVer)
 
 	// newClient will create the HTTP client with Freebox CA certificates and configured timeout
-	return newClient(ClientParams{
-		FullBaseURL:   fullBaseURL,
-		ClientOptions: opt,
-	}), nil
-}
-
-// ClientParams holds all parameters needed to create a Client, including the
-// full base URL (scheme + host + port + api_base_url + version). Used internally
-// and for testing.
-type ClientParams struct {
-	FullBaseURL string
-	ClientOptions
+	return newClient(u, opt), nil
 }
 
 // newClient is the internal constructor that creates a Client with explicit
 // API endpoint parameters. Used by NewClient and tests.
-func newClient(params ClientParams) *Client {
+func newClient(baseURL *url.URL, opt ClientOptions) *Client {
 	// Create HTTP client with Freebox CA certificates and configured timeout
-	timeout := params.HTTPTimeout
+	timeout := opt.HTTPTimeout
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
@@ -131,13 +111,13 @@ func newClient(params ClientParams) *Client {
 	}
 
 	return &Client{
-		fullBaseURL: params.FullBaseURL,
-		appID:       params.AppID,
-		appName:     params.AppName,
-		appVersion:  params.AppVersion,
-		deviceName:  params.DeviceName,
-		appToken:    params.AppToken,
-		httpClient:  httpClient,
+		baseURL:    baseURL,
+		appID:      opt.AppID,
+		appName:    opt.AppName,
+		appVersion: opt.AppVersion,
+		deviceName: opt.DeviceName,
+		appToken:   opt.AppToken,
+		httpClient: httpClient,
 	}
 }
 
@@ -201,9 +181,9 @@ func (c *Client) doAuth(ctx context.Context, method, path string, body any, out 
 }
 
 func (c *Client) buildRequest(ctx context.Context, method, path string, body any) (*http.Request, error) {
-	// fullBaseURL already contains scheme + host + port + api_base_url + version +
+	// baseURL already contains scheme + host + port + api_base_url + version +
 	// trailing slash, e.g., "https://example.fbxos.fr:3615/api/v4/"
-	fullURL := c.fullBaseURL + strings.TrimPrefix(path, "/")
+	fullURL := c.baseURL.JoinPath(path).String()
 
 	var rdr io.Reader
 	if body != nil {

@@ -196,20 +196,4 @@ func TestParseServiceEntryMissingAPIVersion(t *testing.T) {
 	assert.Contains(t, err.Error(), "empty api_version", "error should mention empty api_version")
 }
 
-func TestNormalizeAPIBaseURL(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"/api/", "/api/"},
-		{"/api", "/api/"},
-		{"api", "/api/"},
-		{"api/", "/api/"},
-	}
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.expected, normalizeAPIBaseURL(tt.input), "normalized api_base_url mismatch")
-		})
-	}
-}

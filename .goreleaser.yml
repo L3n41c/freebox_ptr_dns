@@ -8,6 +8,7 @@ builds:
     main: ./cmd/freebox-ptr-dns
     ldflags:
       - -s -w
+      - -X github.com/L3n41c/freebox_ptr_dns/internal/app.version={{.Version}}
     env:
       - CGO_ENABLED=0
     goos:

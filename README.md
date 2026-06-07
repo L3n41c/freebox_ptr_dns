@@ -65,7 +65,8 @@ The output is a static binary built with `CGO_ENABLED=0`, stripped via
 ## Configure
 
 Copy `config.example.toml` to `/etc/freebox-ptr-dns/config.toml` and edit
-the `[freebox]` block (especially `app_id`, which should be reverse-DNS).
+as needed. The Freebox API is discovered automatically via mDNS, and application
+metadata (app_id, app_name, app_version, device_name) is set automatically.
 
 ```bash
 sudo install -d -m 0755 /etc/freebox-ptr-dns

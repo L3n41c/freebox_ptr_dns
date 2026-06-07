@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/L3n41c/freebox_ptr_dns/internal/app"
 	"github.com/L3n41c/freebox_ptr_dns/internal/config"
 	"github.com/L3n41c/freebox_ptr_dns/internal/dns"
 	"github.com/L3n41c/freebox_ptr_dns/internal/freebox"
@@ -26,7 +27,13 @@ import (
 func main() {
 	configPath := flag.String("config", "/etc/freebox-ptr-dns/config.toml", "path to the TOML config file")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error)")
+	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(app.Version())
+		os.Exit(0)
+	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: parseLevel(*logLevel),
@@ -72,13 +79,19 @@ func run(configPath string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Get device name
+	hostname, err := app.DeviceName()
+	if err != nil {
+		return fmt.Errorf("get hostname: %w", err)
+	}
+
 	// Create the Freebox client - it will automatically discover the Freebox via mDNS
 	// and create its own HTTP client with Freebox CA certificates
 	client, err := freebox.NewClient(ctx, freebox.ClientOptions{
-		AppID:        cfg.Freebox.AppID,
-		AppName:      cfg.Freebox.AppName,
-		AppVersion:   cfg.Freebox.AppVersion,
-		DeviceName:   cfg.Freebox.DeviceName,
+		AppID:        app.AppID,
+		AppName:      app.AppName,
+		AppVersion:   app.Version(),
+		DeviceName:   hostname,
 		HTTPTimeout:  cfg.Poller.HTTPTimeout,
 	})
 	if err != nil {

@@ -23,11 +23,7 @@ type Config struct {
 }
 
 type Freebox struct {
-	AppID      string `toml:"app_id"`
-	AppName    string `toml:"app_name"`
-	AppVersion string `toml:"app_version"`
-	DeviceName string `toml:"device_name"`
-	TokenPath  string `toml:"token_path"`
+	TokenPath string `toml:"token_path"`
 }
 
 // LocalDomain is a local DNS domain for PTR record suffixes.
@@ -112,19 +108,7 @@ func Load(path string) (*Config, error) {
 }
 
 func validate(cfg *Config) error {
-	// Validate Freebox (all fields required)
-	if cfg.Freebox.AppID == "" {
-		return errors.New("freebox.app_id is required")
-	}
-	if cfg.Freebox.AppName == "" {
-		return errors.New("freebox.app_name is required")
-	}
-	if cfg.Freebox.AppVersion == "" {
-		return errors.New("freebox.app_version is required")
-	}
-	if cfg.Freebox.DeviceName == "" {
-		return errors.New("freebox.device_name is required")
-	}
+	// Validate Freebox
 	if cfg.Freebox.TokenPath == "" {
 		return errors.New("freebox.token_path is required")
 	}

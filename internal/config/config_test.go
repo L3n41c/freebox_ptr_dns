@@ -37,10 +37,6 @@ func TestLoad(t *testing.T) {
 		{
 			name: "full config",
 			config: `[freebox]
-app_id       = "fr.test.app"
-app_name     = "Test App"
-app_version  = "1.2"
-device_name  = "test-host"
 token_path   = "/var/lib/test/token"
 
 [dns]
@@ -55,11 +51,7 @@ http_timeout     = "10s"`,
 			wantErr: false,
 			expected: &Config{
 				Freebox: Freebox{
-					AppID:      "fr.test.app",
-					AppName:    "Test App",
-					AppVersion: "1.2",
-					DeviceName: "test-host",
-					TokenPath:  "/var/lib/test/token",
+					TokenPath: "/var/lib/test/token",
 				},
 				DNS: DNS{
 					Listen:      "127.0.0.1:5353",
@@ -79,19 +71,11 @@ http_timeout     = "10s"`,
 		{
 			name: "applies defaults",
 			config: `[freebox]
-app_id      = "fr.test.app"
-app_name    = "Test App"
-app_version = "1.0"
-device_name = "host"
 token_path  = "/tmp/token"`,
 			wantErr: false,
 			expected: &Config{
 				Freebox: Freebox{
-					AppID:      "fr.test.app",
-					AppName:    "Test App",
-					AppVersion: "1.0",
-					DeviceName: "host",
-					TokenPath:  "/tmp/token",
+					TokenPath: "/tmp/token",
 				},
 				DNS: DNS{
 					Listen:      "0.0.0.0:53",
@@ -114,10 +98,6 @@ token_path  = "/tmp/token"`,
 		{
 			name: "explicit empty local domain honored",
 			config: `[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
 token_path="/tmp/t"
 
 [dns]
@@ -125,11 +105,7 @@ local_domain = ""`,
 			wantErr: false,
 			expected: &Config{
 				Freebox: Freebox{
-					AppID:      "x",
-					AppName:    "x",
-					AppVersion: "1",
-					DeviceName: "x",
-					TokenPath:  "/tmp/t",
+					TokenPath: "/tmp/t",
 				},
 				DNS: DNS{
 					Listen:      "0.0.0.0:53",
@@ -154,10 +130,6 @@ local_domain = ""`,
 		{
 			name: "rejects unknown keys",
 			config: `[freebox]
-app_id      = "x"
-app_name    = "x"
-app_version = "1"
-device_name = "x"
 token_path  = "/tmp/t"
 unknown_key = "oops"`,
 			wantErr:       true,
@@ -166,10 +138,6 @@ unknown_key = "oops"`,
 		{
 			name: "rejects invalid CIDR",
 			config: `[freebox]
-app_id      = "x"
-app_name    = "x"
-app_version = "1"
-device_name = "x"
 token_path  = "/tmp/t"
 
 [dns]
@@ -177,43 +145,16 @@ allowed_networks = ["not-a-cidr"]`,
 			wantErr:       true,
 			wantErrSubstr: "allowed_networks",
 		},
-		{
-			name: "rejects missing app_id",
-			config: `[freebox]
-app_name="x"
-app_version="1"
-device_name="x"
-token_path="/tmp/t"`,
-			wantErr:       true,
-			wantErrSubstr: "app_id",
-		},
-		{
-			name: "rejects missing app_name",
-			config: `[freebox]
-app_id="x"
-app_version="1"
-device_name="x"
-token_path="/tmp/t"`,
-			wantErr:       true,
-			wantErrSubstr: "app_name",
-		},
+
 		{
 			name: "rejects missing token_path",
-			config: `[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"`,
+			config: `[freebox]`,
 			wantErr:       true,
 			wantErrSubstr: "token_path",
 		},
 		{
 			name: "rejects zero durations",
 			config: `[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
 token_path="/tmp/t"
 
 [dns]
@@ -224,10 +165,6 @@ ttl = "0s"`,
 		{
 			name: "rejects bad listen",
 			config: `[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
 token_path="/tmp/t"
 
 [dns]
@@ -242,10 +179,6 @@ listen = "no-port-here"`,
 		{
 			name: "rejects empty allowed_networks",
 			config: `[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
 token_path="/tmp/t"
 
 [dns]
@@ -281,10 +214,6 @@ allowed_networks = []`,
 
 func TestLoad_LocalDomainValidation(t *testing.T) {
 	header := `[freebox]
-app_id="x"
-app_name="x"
-app_version="1"
-device_name="x"
 token_path="/tmp/t"
 
 [dns]

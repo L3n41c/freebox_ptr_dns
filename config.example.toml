@@ -5,27 +5,11 @@
 [freebox]
 # Freebox API information is discovered automatically via mDNS.
 # No manual configuration needed for api_domain, api_base_url, or api_version.
-
-# Identifier shown in the Freebox "Authorized apps" panel. Use reverse DNS.
-app_id      = "fr.example.freebox_ptr_dns"
-
-# Human-readable name shown on the front panel during enrollment.
-app_name    = "Freebox PTR DNS"
-
-app_version = "1.0"
-
-# Name of the device running this binary (also shown to the user).
-device_name = "ptr-dns-server"
+# Application metadata (app_id, app_name, app_version, device_name) is set automatically.
 
 # Where the long-lived app_token is persisted (0600). The parent dir is
 # created with 0700 if missing. Delete this file to re-enroll from scratch.
 token_path  = "/var/lib/freebox-ptr-dns/app_token"
-
-# By default the binary talks to the Freebox over HTTPS. Set to true to use
-# plain HTTP — STRONGLY DISCOURAGED: the app_token and session tokens travel
-# in cleartext on the LAN. Only enable for legitimate edge cases (older
-# firmware that does not present HTTPS on the local domain).
-insecure_http = false
 
 [dns]
 # Address to bind. Use "[::]:53" to listen on all v4/v6, "127.0.0.1:53"

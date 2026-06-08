@@ -11,12 +11,6 @@
 # created with 0700 if missing. Delete this file to re-enroll from scratch.
 token_path  = "/var/lib/freebox-ptr-dns/app_token"
 
-# By default the binary talks to the Freebox over HTTPS. Set to true to use
-# plain HTTP — STRONGLY DISCOURAGED: the app_token and session tokens travel
-# in cleartext on the LAN. Only enable for legitimate edge cases (older
-# firmware that does not present HTTPS on the local domain).
-insecure_http = false
-
 [dns]
 # Address to bind. Use "[::]:53" to listen on all v4/v6, "127.0.0.1:53"
 # for local Pi-hole only, etc.

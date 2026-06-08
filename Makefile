@@ -3,7 +3,7 @@ PKG    := ./cmd/freebox-ptr-dns
 GOFLAGS := -trimpath
 
 # Get version from git tags
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION := $(shell (git describe --tags --always --dirty 2>/dev/null || echo "dev") | sed 's/^v//')
 LDFLAGS := -s -w -X github.com/L3n41c/freebox_ptr_dns/internal/app.version=$(VERSION)
 
 .PHONY: all build test vet race build-amd64 build-arm64 build-armv7 clean install-systemd

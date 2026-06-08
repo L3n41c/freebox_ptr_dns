@@ -20,7 +20,7 @@ const (
 
 // version is injected at build time via -ldflags.
 // Default: "dev" (for development without git tags).
-// Expected format: git tag version (e.g., "v1.0.0") or snapshot (e.g., "1.0.1-next").
+// Expected format: semver (e.g., "1.0.0") or snapshot (e.g., "1.0.1-next").
 var version = "dev"
 
 // Version returns the application version.

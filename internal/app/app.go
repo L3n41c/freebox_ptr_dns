@@ -12,8 +12,7 @@ import "os"
 const (
 	// AppID is the unique application identifier (reverse DNS format).
 	// Must remain stable for the Freebox to recognize the application.
-	AppID = "fr.lhuard.freebox_ptr_dns"
-
+	AppID = "fr.lhuard.freebox-ptr-dns"
 	// AppName is the human-readable name displayed on the Freebox LCD panel.
 	AppName = "Freebox PTR DNS"
 )

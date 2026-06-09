@@ -110,7 +110,7 @@ func Load(path string) (*Config, error) {
 
 func validate(cfg *Config) error {
 	// Validate Freebox
-	// TokenPath is optional - defaults to $STATEDIR/app_token when running under systemd
+	// TokenPath is optional - defaults to $STATE_DIRECTORY/app_token when running under systemd
 	if cfg.Freebox.TokenPath != "" && !filepath.IsAbs(cfg.Freebox.TokenPath) {
 		return errors.New("freebox.token_path must be an absolute path if specified")
 	}

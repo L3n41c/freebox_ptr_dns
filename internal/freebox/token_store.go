@@ -20,16 +20,19 @@ const maxTokenSize = 4096
 
 // GetTokenPath returns the path for the token file.
 // If explicitPath is provided, it is used as-is.
-// Otherwise, it defaults to $STATEDIR/app_token (for systemd StateDirectory).
+// Otherwise, it defaults to $STATE_DIRECTORY/app_token (for systemd StateDirectory).
+// Note: STATE_DIRECTORY is a colon-separated list; we use the first entry.
 // Falls back to a path in /tmp for testing without systemd.
 func GetTokenPath(explicitPath string) (string, error) {
 	if explicitPath != "" {
 		return explicitPath, nil
 	}
 
-	statedir := os.Getenv("STATEDIR")
-	if statedir != "" {
-		return filepath.Join(statedir, "app_token"), nil
+	// STATE_DIRECTORY can be a colon-separated list; use the first non-empty entry
+	for _, dir := range filepath.SplitList(os.Getenv("STATE_DIRECTORY")) {
+		if dir != "" {
+			return filepath.Join(dir, "app_token"), nil
+		}
 	}
 
 	// Fallback for testing without systemd
@@ -54,11 +57,10 @@ func SaveToken(path, token string) error {
 
 	dir := filepath.Dir(path)
 
-	// Check if we're running under systemd with StateDirectory
-	// If so, systemd has already created the directory with correct permissions
-	statedir := os.Getenv("STATEDIR")
-	if statedir == "" || !strings.HasPrefix(dir, statedir) {
-		// Not using StateDirectory: create the directory if needed
+	// The parent directory must exist and have correct permissions.
+	// Under systemd with StateDirectory, systemd creates it automatically.
+	// For the /tmp fallback path, create it here to support first-run enrollment.
+	if strings.HasPrefix(dir, os.TempDir()) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create parent dir: %w", err)
 		}

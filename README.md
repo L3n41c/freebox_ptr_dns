@@ -91,7 +91,7 @@ Approve "Freebox PTR DNS" on your Freebox front panel
 ```
 
 Approve on the front panel. The binary then writes the `app_token` to
-`$STATEDIR/app_token` (mode `0600`) when running as a service, or to
+`$STATE_DIRECTORY/app_token` (mode `0600`) when running as a service, or to
 `/tmp/freebox-ptr-dns/app_token` for testing. The DNS server then starts.
 
 If the user denies the request (exit code 3) or times out, just rerun the
@@ -109,8 +109,10 @@ sudo systemctl enable --now freebox-ptr-dns
 
 The service uses `DynamicUser=yes` for maximum isolation: systemd allocates a
 unique UID from the 61184-65519 range at runtime, and the `app_token` is stored
-in a private state directory (`$STATEDIR`). No manual user or directory creation
+in a private state directory (`$STATE_DIRECTORY`). No manual user or directory creation
 is required.
+
+**Note:** This requires systemd >= 245 for `StateDirectory` and `ProtectProc=invisible` support.
 
 To check the service status:
 
@@ -192,7 +194,7 @@ To re-enroll (e.g. after rotating the app or revoking it on the Freebox):
 
 ```bash
 sudo systemctl stop freebox-ptr-dns
-sudo rm /var/lib/private/systemd/service-freebox-ptr-dns/app_token
+sudo rm /var/lib/freebox-ptr-dns/app_token
 sudo systemctl start freebox-ptr-dns
 sudo journalctl -u freebox-ptr-dns -f
 # approve on the front panel when prompted

@@ -64,14 +64,12 @@ The output is a static binary built with `CGO_ENABLED=0`, stripped via
 
 ## Configure
 
-Copy `config.example.toml` to `/etc/freebox-ptr-dns/config.toml` and edit
+Copy `freebox-ptr-dns.example.toml` to `/etc/freebox-ptr-dns.toml` and edit
 as needed. The Freebox API is discovered automatically via mDNS, and application
 metadata (app_id, app_name, app_version, device_name) is set automatically.
 
 ```bash
-sudo install -d -m 0755 /etc/freebox-ptr-dns
-sudo install -m 0644 config.example.toml /etc/freebox-ptr-dns/config.toml
-sudo install -d -m 0700 /var/lib/freebox-ptr-dns
+sudo install -m 0644 freebox-ptr-dns.example.toml /etc/freebox-ptr-dns.toml
 ```
 
 ## First launch (enrollment)
@@ -79,7 +77,7 @@ sudo install -d -m 0700 /var/lib/freebox-ptr-dns
 Run the binary by hand once, with the Freebox in reach:
 
 ```bash
-sudo ./freebox-ptr-dns -config /etc/freebox-ptr-dns/config.toml
+sudo ./freebox-ptr-dns -config /etc/freebox-ptr-dns.toml
 ```
 
 You will see:
@@ -93,50 +91,38 @@ Approve "Freebox PTR DNS" on your Freebox front panel
 ```
 
 Approve on the front panel. The binary then writes the `app_token` to
-`/var/lib/freebox-ptr-dns/app_token` (mode `0600`) and proceeds to start
-the DNS server.
+`$STATEDIR/app_token` (mode `0600`) when running as a service, or to
+`/tmp/freebox-ptr-dns/app_token` for testing. The DNS server then starts.
 
 If the user denies the request (exit code 3) or times out, just rerun the
 binary.
 
 ## Run as a service
 
-A minimal systemd unit:
-
-```ini
-# /etc/systemd/system/freebox-ptr-dns.service
-[Unit]
-Description=Freebox PTR DNS
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=/usr/local/bin/freebox-ptr-dns -config /etc/freebox-ptr-dns/config.toml
-Restart=on-failure
-RestartSec=5s
-
-# Hardening
-DynamicUser=no
-User=freebox-ptr-dns
-Group=freebox-ptr-dns
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/freebox-ptr-dns
-PrivateTmp=true
-PrivateDevices=true
-
-[Install]
-WantedBy=multi-user.target
-```
+Install the service file and enable it:
 
 ```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin freebox-ptr-dns
-sudo chown -R freebox-ptr-dns:freebox-ptr-dns /var/lib/freebox-ptr-dns
+sudo cp freebox-ptr-dns.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now freebox-ptr-dns
+```
+
+The service uses `DynamicUser=yes` for maximum isolation: systemd allocates a
+unique UID from the 61184-65519 range at runtime, and the `app_token` is stored
+in a private state directory (`$STATEDIR`). No manual user or directory creation
+is required.
+
+To check the service status:
+
+```bash
+sudo systemctl status freebox-ptr-dns
+sudo journalctl -u freebox-ptr-dns -f
+```
+
+To verify security settings:
+
+```bash
+systemd-analyze security freebox-ptr-dns
 ```
 
 ## Wire it into Pi-hole
@@ -167,9 +153,9 @@ REV_SERVER_TARGET=<PTR_SERVER_IP>
 REV_SERVER_DOMAIN=lan
 ```
 
-The `local_domain` setting in `config.toml` must match the `REV_SERVER_DOMAIN`
-on Pi-hole side (default: `lan`). The names appearing on the dashboard will
-then look like `laptop-alice.lan`.
+The `local_domain` setting in `/etc/freebox-ptr-dns.toml` must match the
+`REV_SERVER_DOMAIN` on Pi-hole side (default: `lan`). The names appearing on
+the dashboard will then look like `laptop-alice.lan`.
 
 ## Test
 
@@ -206,7 +192,7 @@ To re-enroll (e.g. after rotating the app or revoking it on the Freebox):
 
 ```bash
 sudo systemctl stop freebox-ptr-dns
-sudo rm /var/lib/freebox-ptr-dns/app_token
+sudo rm /var/lib/private/systemd/service-freebox-ptr-dns/app_token
 sudo systemctl start freebox-ptr-dns
 sudo journalctl -u freebox-ptr-dns -f
 # approve on the front panel when prompted

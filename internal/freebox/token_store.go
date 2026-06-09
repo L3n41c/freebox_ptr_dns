@@ -18,10 +18,30 @@ import (
 // any real app_token, prevents reading an attacker-controlled large file.
 const maxTokenSize = 4096
 
-// SaveToken writes the app_token to path with 0600 permissions, creating
-// parent directories as needed (0700). Refuses to overwrite an existing file
-// and refuses to write under a directory whose permissions are looser than
-// 0700 (group/world access to the parent would defeat the file mode).
+// GetTokenPath returns the path for the token file.
+// If explicitPath is provided, it is used as-is.
+// Otherwise, it defaults to $STATEDIR/app_token (for systemd StateDirectory).
+// Falls back to a path in /tmp for testing without systemd.
+func GetTokenPath(explicitPath string) (string, error) {
+	if explicitPath != "" {
+		return explicitPath, nil
+	}
+
+	statedir := os.Getenv("STATEDIR")
+	if statedir != "" {
+		return filepath.Join(statedir, "app_token"), nil
+	}
+
+	// Fallback for testing without systemd
+	return filepath.Join(os.TempDir(), "freebox-ptr-dns", "app_token"), nil
+}
+
+// SaveToken writes the app_token to path with 0600 permissions.
+// When running under systemd with StateDirectory, the parent directory is
+// created by systemd. Otherwise, we create it with 0700 permissions.
+// Refuses to overwrite an existing file and refuses to write under a directory
+// whose permissions are looser than 0700 (group/world access to the parent
+// would defeat the file mode).
 //
 // Writes are atomic: we stream into "<path>.tmp" then rename(2) it onto path.
 // A crash mid-write therefore never leaves an empty or truncated app_token
@@ -34,8 +54,14 @@ func SaveToken(path, token string) error {
 
 	dir := filepath.Dir(path)
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create parent dir: %w", err)
+	// Check if we're running under systemd with StateDirectory
+	// If so, systemd has already created the directory with correct permissions
+	statedir := os.Getenv("STATEDIR")
+	if statedir == "" || !strings.HasPrefix(dir, statedir) {
+		// Not using StateDirectory: create the directory if needed
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create parent dir: %w", err)
+		}
 	}
 
 	if err := checkParentDir(dir); err != nil {

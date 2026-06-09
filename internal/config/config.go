@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -109,8 +110,9 @@ func Load(path string) (*Config, error) {
 
 func validate(cfg *Config) error {
 	// Validate Freebox
-	if cfg.Freebox.TokenPath == "" {
-		return errors.New("freebox.token_path is required")
+	// TokenPath is optional - defaults to $STATEDIR/app_token when running under systemd
+	if cfg.Freebox.TokenPath != "" && !filepath.IsAbs(cfg.Freebox.TokenPath) {
+		return errors.New("freebox.token_path must be an absolute path if specified")
 	}
 
 	// Validate DNS

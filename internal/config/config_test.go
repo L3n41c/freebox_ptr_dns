@@ -147,10 +147,28 @@ allowed_networks = ["not-a-cidr"]`,
 		},
 
 		{
-			name: "rejects missing token_path",
+			name: "allows missing token_path",
 			config: `[freebox]`,
-			wantErr:       true,
-			wantErrSubstr: "token_path",
+			wantErr: false,
+			expected: &Config{
+				Freebox: Freebox{},
+				DNS: DNS{
+					Listen:      "0.0.0.0:53",
+					TTL:         5 * time.Minute,
+					LocalDomain: LocalDomain("lan"),
+					AllowedNetworks: []netip.Prefix{
+						netip.MustParsePrefix("10.0.0.0/8"),
+						netip.MustParsePrefix("172.16.0.0/12"),
+						netip.MustParsePrefix("192.168.0.0/16"),
+						netip.MustParsePrefix("fc00::/7"),
+						netip.MustParsePrefix("fe80::/10"),
+					},
+				},
+				Poller: Poller{
+					Interval:    30 * time.Second,
+					HTTPTimeout: 5 * time.Second,
+				},
+			},
 		},
 		{
 			name: "rejects zero durations",

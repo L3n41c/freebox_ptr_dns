@@ -34,10 +34,57 @@ changelog:
       - '^test:'
 
 archives:
-  - formats:
+  - id: archives
+    formats:
       - tar.gz
       - tar.zst
     name_template: '{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    files:
+      - freebox-ptr-dns.toml
+      - freebox-ptr-dns.service
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: linux-packages
+    package_name: freebox-ptr-dns
+    file_name_template: '{{ .PackageName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    ids:
+      - freebox-ptr-dns
+    formats:
+      - deb
+      - rpm
+      - archlinux
+    vendor: L3n41c
+    homepage: https://github.com/L3n41c/freebox_ptr_dns
+    maintainer: Lénaïc Huard <lenaic@lhuard.fr>
+    description: |-
+      Freebox PTR DNS server for Pi-hole integration.
+      A tiny DNS server that answers PTR queries for the local network by
+      asking the Freebox API, designed to plug into Pi-hole's rev-server.
+    license: MIT
+    bindir: /usr/bin
+    contents:
+      - src: freebox-ptr-dns.toml
+        dst: /etc/freebox-ptr-dns.toml
+        type: config|noreplace
+      - src: freebox-ptr-dns.service
+        dst: /usr/lib/systemd/system/freebox-ptr-dns.service
+
+signs:
+  - id: gpg-sign
+    artifacts: all
+    cmd: gpg2
+    args:
+      - "--batch"
+      - "-u"
+      - "${GPG_FINGERPRINT}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "--armor"
+      - "${artifact}"
+    signature: "${artifact}.asc"
 
 release:
   github:
@@ -46,3 +93,5 @@ release:
   draft: false
   replace_existing_draft: true
   prerelease: auto
+  extra_files:
+    - glob: 'freebox-ptr-dns.asc'

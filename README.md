@@ -62,64 +62,90 @@ make dist        # all three above into ./dist/
 The output is a static binary built with `CGO_ENABLED=0`, stripped via
 `-ldflags="-s -w"`.
 
-## Configure
+## Installation
 
-Copy `freebox-ptr-dns.example.toml` to `/etc/freebox-ptr-dns.toml` and edit
-as needed. The Freebox API is discovered automatically via mDNS, and application
-metadata (app_id, app_name, app_version, device_name) is set automatically.
+Packages are available for Debian/Ubuntu (.deb), RHEL/Fedora (.rpm), and Arch Linux from the [releases page](https://github.com/L3n41c/freebox_ptr_dns/releases).
+All packages include the binary, default configuration, and systemd service file.
+The DNS server listens on `[::1]:1053` by default to avoid conflicts with existing DNS servers (e.g., Pi-hole which binds port 53 on all interfaces).
 
-```bash
-sudo install -m 0644 freebox-ptr-dns.example.toml /etc/freebox-ptr-dns.toml
-```
+### Download the Public GPG Key
 
-## First launch (enrollment)
-
-Run the binary by hand once, with the Freebox in reach:
+First, download and import the signing key:
 
 ```bash
-sudo ./freebox-ptr-dns -config /etc/freebox-ptr-dns.toml
+curl -sSfL https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns.asc | gpg --import -
 ```
 
-You will see:
-
-```
-WARN ACTION REQUIRED
-==================================================================
-Approve "Freebox PTR DNS" on your Freebox front panel
-(use the arrow keys + checkmark).
-==================================================================
-```
-
-Approve on the front panel. The binary then writes the `app_token` to
-`$STATE_DIRECTORY/app_token` (mode `0600`) when running as a service, or to
-`/tmp/freebox-ptr-dns/app_token` for testing. The DNS server then starts.
-
-If the user denies the request (exit code 3) or times out, just rerun the
-binary.
-
-## Run as a service
-
-Install the service file and enable it:
+### Debian / Ubuntu (.deb)
 
 ```bash
-sudo cp freebox-ptr-dns.service /etc/systemd/system/
+# Download the package (replace VERSION and ARCH with actual values)
+wget https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns-VERSION-linux-ARCH.deb
+
+# Verify GPG signature
+gpg --verify freebox-ptr-dns-VERSION-linux-ARCH.deb.asc freebox-ptr-dns-VERSION-linux-ARCH.deb
+
+# Verify GitHub attestation
+gh attestation verify --owner L3n41c freebox-ptr-dns-VERSION-linux-ARCH.deb
+
+# Install the package
+sudo dpkg -i freebox-ptr-dns-VERSION-linux-ARCH.deb
+```
+
+### RHEL / Fedora / CentOS (.rpm)
+
+```bash
+# Download the package (replace VERSION and ARCH with actual values)
+wget https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns-VERSION-linux-ARCH.rpm
+
+# Verify GPG signature
+gpg --verify freebox-ptr-dns-VERSION-linux-ARCH.rpm.asc freebox-ptr-dns-VERSION-linux-ARCH.rpm
+
+# Verify GitHub attestation
+gh attestation verify --owner L3n41c freebox-ptr-dns-VERSION-linux-ARCH.rpm
+
+# Install the package
+sudo rpm -ivh freebox-ptr-dns-VERSION-linux-ARCH.rpm
+```
+
+### Arch Linux (archlinux)
+
+```bash
+# Download the package (replace VERSION and ARCH with actual values)
+wget https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+
+# Verify GPG signature
+gpg --verify freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst.asc freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+
+# Verify GitHub attestation
+gh attestation verify --owner L3n41c freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+
+# Install the package
+sudo pacman -U freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+```
+
+### After Installation (All Distributions)
+
+The package installs:
+- Binary: `/usr/bin/freebox-ptr-dns`
+- Configuration: `/etc/freebox-ptr-dns.toml`
+- Systemd service: `/usr/lib/systemd/system/freebox-ptr-dns.service`
+
+Start and enable the service:
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now freebox-ptr-dns
 ```
 
-The service uses `DynamicUser=yes` for maximum isolation: systemd allocates a
-unique UID from the 61184-65519 range at runtime, and the `app_token` is stored
-in a private state directory (`$STATE_DIRECTORY`). No manual user or directory creation
-is required.
-
-**Note:** This requires systemd >= 245 for `StateDirectory` and `ProtectProc=invisible` support.
-
-To check the service status:
+Check the service status:
 
 ```bash
 sudo systemctl status freebox-ptr-dns
 sudo journalctl -u freebox-ptr-dns -f
 ```
+
+**First launch requires Freebox approval:** On first start, the service will prompt you to approve the application on your Freebox front panel (use the arrow keys + checkmark). Once approved, the service will start automatically.
 
 To verify security settings:
 
@@ -127,7 +153,11 @@ To verify security settings:
 systemd-analyze security freebox-ptr-dns
 ```
 
+**Note:** The service requires systemd >= 245 for `StateDirectory` and `ProtectProc=invisible` support.
+
 ## Wire it into Pi-hole
+
+By default, the service listens on `[::1]:1053`. Configure Pi-hole to use this address and port.
 
 ### Pi-hole v6
 
@@ -135,8 +165,8 @@ systemd-analyze security freebox-ptr-dns
 # /etc/pihole/pihole.toml
 [dns]
 revServers = [
-  "true,192.168.1.0/24,<PTR_SERVER_IP>#53,lan",
-  "true,fd00::/8,<PTR_SERVER_IP>#53,lan",
+  "true,192.168.1.0/24,::1#1053,lan",
+  "true,fd00::/8,::1#1053,lan",
 ]
 ```
 
@@ -151,8 +181,9 @@ sudo systemctl restart pihole-FTL
 ```
 REV_SERVER=true
 REV_SERVER_CIDR=192.168.1.0/24
-REV_SERVER_TARGET=<PTR_SERVER_IP>
+REV_SERVER_TARGET=::1
 REV_SERVER_DOMAIN=lan
+REV_SERVER_PORT=1053
 ```
 
 The `local_domain` setting in `/etc/freebox-ptr-dns.toml` must match the
@@ -163,17 +194,17 @@ the dashboard will then look like `laptop-alice.lan`.
 
 ```bash
 # IPv4
-dig @<PTR_SERVER_IP> -x 192.168.1.42
+dig @::1 -p 1053 -x 192.168.1.42
 # expected: PTR record pointing to <name>.lan., TTL 300
 
 # IPv6
-dig @<PTR_SERVER_IP> -x fd00::1
+dig @::1 -p 1053 -x fd00::1
 
 # Off-LAN: REFUSED
-dig @<PTR_SERVER_IP> -x 8.8.8.8
+dig @::1 -p 1053 -x 8.8.8.8
 
 # Unknown LAN IP: NXDOMAIN
-dig @<PTR_SERVER_IP> -x 192.168.1.250
+dig @::1 -p 1053 -x 192.168.1.250
 ```
 
 ## TTL rationale
@@ -187,18 +218,6 @@ API. One might be tempted to align PTR TTLs with the lease duration, but:
 - A 12 h TTL means a downstream resolver could serve the wrong name for 12
   hours if a device reuses an IP. With 300 s TTL we converge quickly while
   still amortizing the work.
-
-## Re-enrollment
-
-To re-enroll (e.g. after rotating the app or revoking it on the Freebox):
-
-```bash
-sudo systemctl stop freebox-ptr-dns
-sudo rm /var/lib/freebox-ptr-dns/app_token
-sudo systemctl start freebox-ptr-dns
-sudo journalctl -u freebox-ptr-dns -f
-# approve on the front panel when prompted
-```
 
 ## License
 

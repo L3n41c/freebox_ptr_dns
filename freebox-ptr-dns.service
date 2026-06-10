@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/freebox-ptr-dns -config /etc/freebox-ptr-dns.toml
+ExecStart=/usr/bin/freebox-ptr-dns
 Restart=on-failure
 RestartSec=5s
 
@@ -35,8 +35,8 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 
-# Network restrictions (DNS needs IPv4/IPv6 + Unix socket for mDNS)
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Network restrictions (DNS needs IPv4/IPv6 + Unix socket for mDNS + netlink for interface discovery)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Device restrictions
 PrivateDevices=true

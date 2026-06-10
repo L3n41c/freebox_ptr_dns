@@ -25,7 +25,7 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "/etc/freebox-ptr-dns/config.toml", "path to the TOML config file")
+	configPath := flag.String("config", "/etc/freebox-ptr-dns.toml", "path to the TOML config file")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -98,18 +98,23 @@ func run(configPath string) error {
 		return fmt.Errorf("create freebox client: %w", err)
 	}
 
-	token, err := freebox.LoadToken(cfg.Freebox.TokenPath)
+	tokenPath, err := freebox.GetTokenPath(cfg.Freebox.TokenPath)
+	if err != nil {
+		return fmt.Errorf("get token path: %w", err)
+	}
+
+	token, err := freebox.LoadToken(tokenPath)
 	if errors.Is(err, os.ErrNotExist) {
-		slog.Info("no app_token found, starting enrollment", "path", cfg.Freebox.TokenPath)
+		slog.Info("no app_token found, starting enrollment", "path", tokenPath)
 		freebox.OnPrompt = promptOnFreebox
 		newToken, regErr := client.Register(ctx, 2*time.Second, 5*time.Minute)
 		if regErr != nil {
 			return fmt.Errorf("enrollment: %w", regErr)
 		}
-		if saveErr := freebox.SaveToken(cfg.Freebox.TokenPath, newToken); saveErr != nil {
+		if saveErr := freebox.SaveToken(tokenPath, newToken); saveErr != nil {
 			return fmt.Errorf("save token: %w", saveErr)
 		}
-		slog.Info("app_token saved", "path", cfg.Freebox.TokenPath)
+		slog.Info("app_token saved", "path", tokenPath)
 		token = newToken
 	} else if err != nil {
 		return fmt.Errorf("load token: %w", err)

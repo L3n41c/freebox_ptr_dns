@@ -53,15 +53,7 @@ func TestTokenStore_SaveLoad(t *testing.T) {
 	}
 }
 
-func TestTokenStore_CreatesParentDir(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "nested", "deep", "token")
-	require.NoError(t, SaveToken(p, "t"), "SaveToken should create parent dirs")
 
-	st, err := os.Stat(filepath.Dir(p))
-	require.NoError(t, err, "Stat parent should succeed")
-	assert.True(t, st.IsDir(), "parent should be a directory")
-}
 
 // --- Load errors ------------------------------------------------------------
 
@@ -194,4 +186,48 @@ func TestTokenStore_RejectsSymlink(t *testing.T) {
 	require.Error(t, err, "LoadToken should refuse to follow a symlink")
 	err = SaveToken(link, "t")
 	require.Error(t, err, "SaveToken should refuse to follow a symlink")
+}
+
+// --- GetTokenPath ----------------------------------------------------------------
+
+func TestGetTokenPath_ExplicitPath(t *testing.T) {
+	path := "/explicit/path/token"
+	result, err := GetTokenPath(path)
+	require.NoError(t, err)
+	assert.Equal(t, path, result)
+}
+
+func TestGetTokenPath_StateDirectory(t *testing.T) {
+	// Set STATE_DIRECTORY environment variable
+	statedir := "/var/lib/my-service"
+	require.NoError(t, os.Setenv("STATE_DIRECTORY", statedir))
+	defer func() {
+		require.NoError(t, os.Unsetenv("STATE_DIRECTORY"))
+	}()
+
+	path, err := GetTokenPath("")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(statedir, "app_token"), path)
+}
+
+func TestGetTokenPath_Fallback(t *testing.T) {
+	// Unset STATE_DIRECTORY
+	require.NoError(t, os.Unsetenv("STATE_DIRECTORY"))
+
+	path, err := GetTokenPath("")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(os.TempDir(), "freebox-ptr-dns", "app_token"), path)
+}
+
+func TestGetTokenPath_PrefsExplicitOverEnv(t *testing.T) {
+	// Set STATE_DIRECTORY but also provide explicit path
+	require.NoError(t, os.Setenv("STATE_DIRECTORY", "/var/lib/my-service"))
+	defer func() {
+		require.NoError(t, os.Unsetenv("STATE_DIRECTORY"))
+	}()
+
+	explicit := "/custom/path/token"
+	path, err := GetTokenPath(explicit)
+	require.NoError(t, err)
+	assert.Equal(t, explicit, path)
 }

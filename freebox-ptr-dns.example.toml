@@ -1,15 +1,16 @@
 # freebox-ptr-dns example configuration.
 #
-# Save under /etc/freebox-ptr-dns/config.toml (or pass -config /path/to.toml).
+# Save under /etc/freebox-ptr-dns.toml (or pass -config /path/to.toml).
 
 [freebox]
 # Freebox API information is discovered automatically via mDNS.
 # No manual configuration needed for api_domain, api_base_url, or api_version.
 # Application metadata (app_id, app_name, app_version, device_name) is set automatically.
 
-# Where the long-lived app_token is persisted (0600). The parent dir is
-# created with 0700 if missing. Delete this file to re-enroll from scratch.
-token_path  = "/var/lib/freebox-ptr-dns/app_token"
+# Where the long-lived app_token is persisted (0600).
+# If not specified, defaults to $STATEDIR/app_token (managed by systemd StateDirectory).
+# For testing without systemd, a fallback path in /tmp is used.
+# token_path = "/custom/path/app_token"
 
 [dns]
 # Address to bind. Use "[::]:53" to listen on all v4/v6, "127.0.0.1:53"

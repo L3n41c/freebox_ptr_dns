@@ -1,0 +1,58 @@
+[Unit]
+Description=Freebox PTR DNS
+Documentation=https://github.com/L3n41c/freebox_ptr_dns
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/freebox-ptr-dns -config /etc/freebox-ptr-dns.toml
+Restart=on-failure
+RestartSec=5s
+
+# Dynamic user allocation (UID 61184-65519)
+DynamicUser=yes
+UMask=0077
+
+# State directory for persistent files (app_token)
+StateDirectory=freebox-ptr-dns
+StateDirectoryMode=0700
+
+# Capabilities - Minimal set for DNS binding
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+# Filesystem protection
+ProtectSystem=strict
+ProtectHome=yes
+ProtectClock=yes
+ProtectProc=invisible
+
+# Kernel protection
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+# Network restrictions (DNS needs IPv4/IPv6 + Unix socket for mDNS)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Device restrictions
+PrivateDevices=true
+
+# Process isolation
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+
+# Cleanup
+RemoveIPC=yes
+
+[Install]
+WantedBy=multi-user.target

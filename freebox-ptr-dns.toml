@@ -1,6 +1,7 @@
-# freebox-ptr-dns example configuration.
+# Freebox PTR DNS configuration.
 #
-# Save under /etc/freebox-ptr-dns.toml (or pass -config /path/to.toml).
+# Save as /etc/freebox-ptr-dns.toml for package-based installations,
+# or pass a custom path with -config /path/to/config.toml.
 
 [freebox]
 # Freebox API information is discovered automatically via mDNS.
@@ -13,18 +14,18 @@
 # token_path = "/custom/path/app_token"
 
 [dns]
-# Address to bind. Use "[::]:53" to listen on all v4/v6, "127.0.0.1:53"
-# for local Pi-hole only, etc.
-listen           = "0.0.0.0:53"
+# Address to bind. Defaults to [::1]:1053 to avoid conflicts with existing DNS servers (e.g., Pi-hole).
+# Use "[::]:53" to listen on all v4/v6, "127.0.0.1:53" for IPv4 only, or "0.0.0.0:53" for all IPv4.
+listen = "[::1]:1053"
 
 # TTL returned in PTR answers. A short value keeps things fresh while
 # remaining safe: Pi-hole only re-resolves clients it has not seen in a
 # long time, so a short TTL is essentially free.
 # Accepts any Go duration format: "300s", "5m", "1h", etc.
-ttl             = "5m"
+ttl = "5m"
 
 # Suffix appended to host names in PTR responses. Empty disables the suffix.
-local_domain     = "lan"
+local_domain = "lan"
 
 # Safety net: PTR queries for IPs *outside* these CIDRs are answered REFUSED.
 # Pi-hole already filters by CIDR via rev-server, but this guards against
@@ -40,8 +41,8 @@ allowed_networks = [
 [poller]
 # How often to refresh the host list from the Freebox.
 # Accepts any Go duration format: "30s", "1m", "5m", etc.
-interval         = "30s"
+interval = "30s"
 
 # Timeout for each HTTP request to the Freebox.
 # Accepts any Go duration format.
-http_timeout     = "5s"
+http_timeout = "5s"

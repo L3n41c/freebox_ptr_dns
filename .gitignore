@@ -30,8 +30,3 @@ go.work
 /freebox-ptr-dns
 /freebox-ptr-dns-*
 /dist/
-
-# Local configuration files (keep config.example.toml)
-config.toml
-*.toml
-!config.example.toml

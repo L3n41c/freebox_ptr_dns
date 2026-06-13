@@ -68,60 +68,75 @@ Packages are available for Debian/Ubuntu (.deb), RHEL/Fedora (.rpm), and Arch Li
 All packages include the binary, default configuration, and systemd service file.
 The DNS server listens on `[::1]:1053` by default to avoid conflicts with existing DNS servers (e.g., Pi-hole which binds port 53 on all interfaces).
 
+Set the version and architecture variables (replace with your target values):
+
+```bash
+VERSION="v0.0.1-alpha.1"  # or any other release tag
+ARCH="amd64"             # amd64, arm64, or armv7
+```
+
 ### Download the Public GPG Key
 
 First, download and import the signing key:
 
 ```bash
-curl -sSfL https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns.asc | gpg --import -
+curl -sSfL https://github.com/L3n41c/freebox_ptr_dns/releases/download/${VERSION}/freebox-ptr-dns.asc | gpg --import -
 ```
+
+Verify the key fingerprint matches the expected value:
+
+```bash
+gpg --fingerprint "Freebox PTR DNS"
+```
+
+Expected fingerprint: `BADEF13C87BAC624F89AD5B71626EF5B9BA7A32C`
 
 ### Debian / Ubuntu (.deb)
 
 ```bash
-# Download the package (replace VERSION and ARCH with actual values)
-wget https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns-VERSION-linux-ARCH.deb
+# Download the package
+curl -LO https://github.com/L3n41c/freebox_ptr_dns/releases/download/${VERSION}/freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.deb
 
 # Verify GPG signature
-gpg --verify freebox-ptr-dns-VERSION-linux-ARCH.deb.asc freebox-ptr-dns-VERSION-linux-ARCH.deb
+gpg --verify freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.deb.asc freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.deb
 
 # Verify GitHub attestation
-gh attestation verify --owner L3n41c freebox-ptr-dns-VERSION-linux-ARCH.deb
+gh attestation verify --owner L3n41c freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.deb
 
 # Install the package
-sudo dpkg -i freebox-ptr-dns-VERSION-linux-ARCH.deb
+sudo dpkg -i freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.deb
 ```
 
 ### RHEL / Fedora / CentOS (.rpm)
 
 ```bash
-# Download the package (replace VERSION and ARCH with actual values)
-wget https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns-VERSION-linux-ARCH.rpm
+# Download the package
+curl -LO https://github.com/L3n41c/freebox_ptr_dns/releases/download/${VERSION}/freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.rpm
 
 # Verify GPG signature
-gpg --verify freebox-ptr-dns-VERSION-linux-ARCH.rpm.asc freebox-ptr-dns-VERSION-linux-ARCH.rpm
+gpg --verify freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.rpm.asc freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.rpm
 
 # Verify GitHub attestation
-gh attestation verify --owner L3n41c freebox-ptr-dns-VERSION-linux-ARCH.rpm
+gh attestation verify --owner L3n41c freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.rpm
 
 # Install the package
-sudo rpm -ivh freebox-ptr-dns-VERSION-linux-ARCH.rpm
+sudo rpm -ivh freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.rpm
 ```
 
 ### Arch Linux (archlinux)
 
 ```bash
-# Download the package (replace VERSION and ARCH with actual values)
-wget https://github.com/L3n41c/freebox_ptr_dns/releases/latest/download/freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+# Download the package
+curl -LO https://github.com/L3n41c/freebox_ptr_dns/releases/download/${VERSION}/freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.pkg.tar.zst
 
 # Verify GPG signature
-gpg --verify freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst.asc freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+gpg --verify freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.pkg.tar.zst.asc freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.pkg.tar.zst
 
 # Verify GitHub attestation
-gh attestation verify --owner L3n41c freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+gh attestation verify --owner L3n41c freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.pkg.tar.zst
 
 # Install the package
-sudo pacman -U freebox-ptr-dns-VERSION-linux-ARCH.pkg.tar.zst
+sudo pacman -U freebox-ptr-dns-${VERSION#v}-linux-${ARCH}.pkg.tar.zst
 ```
 
 ### After Installation (All Distributions)

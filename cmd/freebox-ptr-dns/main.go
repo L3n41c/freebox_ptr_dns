@@ -21,6 +21,8 @@ import (
 	"github.com/L3n41c/freebox_ptr_dns/internal/dns"
 	"github.com/L3n41c/freebox_ptr_dns/internal/freebox"
 	"github.com/L3n41c/freebox_ptr_dns/internal/hosts"
+	"github.com/L3n41c/freebox_ptr_dns/internal/systemd"
+	"github.com/coreos/go-systemd/v22/daemon"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,9 +37,23 @@ func main() {
 		os.Exit(0)
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: parseLevel(*logLevel),
-	})))
+	// Determine the log handler
+	// Automatic detection: if NOTIFY_SOCKET is set (systemd), use journald
+	var logHandler slog.Handler
+	if systemd.IsJournalAvailable() {
+		var err error
+		logHandler, err = systemd.NewJournalHandler(parseLevel(*logLevel))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: failed to create journald handler, falling back to stderr: %v\n", err)
+		}
+	}
+	if logHandler == nil {
+		logHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: parseLevel(*logLevel),
+		})
+	}
+
+	slog.SetDefault(slog.New(logHandler))
 
 	if err := run(*configPath); err != nil {
 		slog.Error("fatal", "err", err)
@@ -88,11 +104,11 @@ func run(configPath string) error {
 	// Create the Freebox client - it will automatically discover the Freebox via mDNS
 	// and create its own HTTP client with Freebox CA certificates
 	client, err := freebox.NewClient(ctx, freebox.ClientOptions{
-		AppID:        app.AppID,
-		AppName:      app.AppName,
-		AppVersion:   app.Version(),
-		DeviceName:   hostname,
-		HTTPTimeout:  cfg.Poller.HTTPTimeout,
+		AppID:       app.AppID,
+		AppName:     app.AppName,
+		AppVersion:  app.Version(),
+		DeviceName:  hostname,
+		HTTPTimeout: cfg.Poller.HTTPTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf("create freebox client: %w", err)
@@ -126,7 +142,12 @@ func run(configPath string) error {
 	server := dns.NewServer(cfg.DNS.Listen, handler)
 
 	poller := hosts.NewPoller(client, cache, cfg.DNS.LocalDomain.String(), cfg.Poller.Interval)
-	poller.OnRefreshSuccess = handler.MarkReady
+	poller.OnRefreshSuccess = func() {
+		handler.MarkReady()
+		if _, err := daemon.SdNotify(false, daemon.SdNotifyReady); err != nil {
+			slog.Error("failed to send READY notification", "err", err)
+		}
+	}
 
 	// Refresh once before opening the DNS port so we never serve authoritative
 	// NXDOMAIN built on empty data. Failure here is non-fatal — the handler
@@ -137,7 +158,7 @@ func run(configPath string) error {
 		}
 		slog.Warn("initial refresh failed; DNS will return SERVFAIL until next refresh succeeds", "err", err)
 	} else {
-		handler.MarkReady()
+		poller.OnRefreshSuccess()
 		slog.Info("hosts refreshed", "n", cache.Len())
 	}
 
@@ -149,7 +170,38 @@ func run(configPath string) error {
 		slog.Info("DNS server listening", "addr", cfg.DNS.Listen)
 		return server.ListenAndServe(ctx)
 	})
+	g.Go(func() error {
+		return runWatchdog(ctx)
+	})
 	return g.Wait()
+}
+
+func runWatchdog(ctx context.Context) error {
+	interval, err := daemon.SdWatchdogEnabled(false)
+	if err != nil {
+		slog.Debug("failed to get watchdog interval", "err", err)
+		return nil
+	}
+	if interval == 0 {
+		return nil
+	}
+
+	ticker := time.NewTicker(interval / 3)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if _, err := daemon.SdNotify(false, daemon.SdNotifyStopping); err != nil {
+				slog.Error("failed to send STOPPING notification", "err", err)
+			}
+			return ctx.Err()
+		case <-ticker.C:
+			if _, err := daemon.SdNotify(false, daemon.SdNotifyWatchdog); err != nil {
+				slog.Error("failed to send WATCHDOG notification", "err", err)
+			}
+		}
+	}
 }
 
 func promptOnFreebox(appName string) {

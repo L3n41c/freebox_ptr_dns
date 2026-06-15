@@ -5,7 +5,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+WatchdogSec=1min
 ExecStart=/usr/bin/freebox-ptr-dns
 Restart=on-failure
 RestartSec=5s

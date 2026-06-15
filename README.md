@@ -170,6 +170,55 @@ systemd-analyze security freebox-ptr-dns
 
 **Note:** The service requires systemd >= 245 for `StateDirectory` and `ProtectProc=invisible` support.
 
+### Systemd Integration Features
+
+The service is fully integrated with systemd:
+
+- **Type=notify:** Uses the `notify` service type, allowing systemd to track service readiness and lifecycle
+- **Watchdog Support:** Supports systemd watchdog with `WatchdogSec=1min` (configurable in the service file)
+- **Journald Logging:** Logs are automatically sent to the systemd journal when running under systemd
+
+These features are **automatically enabled** when the service runs under systemd (Type=notify). No manual configuration is needed.
+
+#### Readiness Notification
+
+The service sends `READY=1` notification to systemd once it has successfully:
+1. Loaded or created the Freebox app token
+2. Performed the initial refresh of host data from the Freebox API
+3. Started listening on the DNS port
+
+This ensures that systemd only considers the service as "started" when it's actually ready to serve PTR queries.
+
+#### Watchdog
+
+If `WatchdogSec` is configured in the service file, the service will periodically send `WATCHDOG=1` notifications (every `WatchdogSec/3`). If systemd doesn't receive these pings, it will automatically restart the service.
+
+To configure or disable the watchdog:
+- Edit `/usr/lib/systemd/system/freebox-ptr-dns.service`
+- Set `WatchdogSec=1min` (or your preferred interval)
+- Or remove the `WatchdogSec` line to disable it
+- Then run `sudo systemctl daemon-reload`
+
+#### Viewing Logs
+
+When running under systemd, use `journalctl` to view structured logs:
+
+```bash
+# View recent logs
+sudo journalctl -u freebox-ptr-dns -f
+
+# View logs since a specific time
+sudo journalctl -u freebox-ptr-dns --since "1 hour ago"
+
+# View logs in JSON format (for analysis)
+sudo journalctl -u freebox-ptr-dns -o json
+
+# Filter by priority
+sudo journalctl -u freebox-ptr-dns -p err
+```
+
+**Note:** Log keys are automatically transformed to uppercase with underscores (e.g., `"err"` becomes `"ERR"`, `"http-status"` becomes `"HTTP_STATUS"`) to comply with journald naming conventions.
+
 ## Wire it into Pi-hole
 
 By default, the service listens on `[::1]:1053`. Configure Pi-hole to use this address and port.

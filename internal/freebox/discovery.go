@@ -68,24 +68,20 @@ func Discover(ctx context.Context) (DiscoveryResult, error) {
 		}
 
 		go func(iface net.Interface) {
-			// Create a channel for this interface's query results
 			ifaceEntries := make(chan *mdns.ServiceEntry, 1)
-			
-			params := &mdns.QueryParam{
+			if err := mdns.QueryContext(discCtx, &mdns.QueryParam{
 				Service:   serviceName,
 				Domain:    "local",
 				Entries:   ifaceEntries,
 				Interface: &iface,
-			}
-			
-			if err := mdns.QueryContext(discCtx, params); err != nil {
+			}); err != nil {
 				// Log at debug level: failure on one interface is not fatal,
 				// other interfaces may still succeed
 				slog.Debug("mDNS query failed on interface",
 					"interface", iface.Name,
 					"error", err)
 			}
-			
+
 			// Forward the first result (if any) to main channel
 			if entry, ok := <-ifaceEntries; ok {
 				entries <- entry
@@ -110,10 +106,12 @@ func Discover(ctx context.Context) (DiscoveryResult, error) {
 }
 
 // parseServiceEntry extracts Freebox API information from a mDNS service entry.
+// Required fields (api_version, api_domain, https_port) must be present in TXT records
+// as they are always provided by Freebox mDNS responses.
 func parseServiceEntry(entry *mdns.ServiceEntry) (DiscoveryResult, error) {
 	result := DiscoveryResult{}
 
-	// Parse TXT records first to get all fields including https_port
+	// Parse TXT records first to get all fields
 	// Freebox mDNS TXT records contain key=value pairs like "api_version=4.0"
 	for _, record := range entry.InfoFields {
 		if record != "" {
@@ -121,28 +119,26 @@ func parseServiceEntry(entry *mdns.ServiceEntry) (DiscoveryResult, error) {
 		}
 	}
 
-	// If https_port was not in TXT records, fall back to SRV port
-	if result.HTTPSPort == 0 {
-		result.HTTPSPort = entry.Port
-	}
-
-	// Validate and set defaults
-	if result.APIDomain == "" {
-		// Try to use the host name from the service entry as fallback
-		// Trim trailing dot from mDNS hostname (e.g., "freebox.local." -> "freebox.local")
-		if entry.Host != "" {
-			result.APIDomain = strings.TrimSuffix(entry.Host, ".")
-		} else {
-			return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty api_domain")
-		}
-	}
+	// Validate required fields - these are ALWAYS present in Freebox mDNS responses
+	// Using fallbacks for these would be unsafe:
+	// - entry.Host (e.g., "Freebox-Server.local") is NOT the same as api_domain (e.g., "mafreebox.freebox.fr")
+	// - entry.Port (typically 80 for HTTP) is NOT the same as https_port (e.g., 443 for HTTPS)
 	if result.APIVersion == "" {
 		return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty api_version")
 	}
+	if result.APIDomain == "" {
+		return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty api_domain")
+	}
+	if result.HTTPSPort == 0 {
+		return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty https_port")
+	}
+
+	// Optional fields with safe defaults
 	if result.APIBaseURL == "" {
-		// Default to /api/ as per Freebox SDK
+		// Default to /api/ as per Freebox SDK - this is the standard base path
 		result.APIBaseURL = "/api/"
 	}
+	// https_available: defaults to false if not specified (safe - Freebox always includes this field)
 
 	return result, nil
 }

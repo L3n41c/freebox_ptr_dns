@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/coreos/go-systemd/v22 v22.7.0
-	github.com/grandcat/zeroconf v1.0.0
+	github.com/hashicorp/mdns v1.0.7
 	github.com/miekg/dns v1.1.72
 	github.com/stretchr/testify v1.11.1
 	github.com/systemd/slog-journal v0.1.2
@@ -13,7 +13,6 @@ require (
 )
 
 require (
-	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/mod v0.31.0 // indirect

@@ -9,7 +9,7 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/stretchr/testify v1.11.1
 	github.com/systemd/slog-journal v0.1.2
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 )
 
 require (

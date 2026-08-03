@@ -43,6 +43,6 @@ jobs:
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
 
       - name: Attest artifacts
-        uses: actions/attest@v4.2.0
+        uses: actions/attest@v4.2.1
         with:
           subject-checksums: ./dist/checksums.txt

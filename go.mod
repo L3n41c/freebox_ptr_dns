@@ -7,15 +7,13 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/miekg/dns v1.1.72
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	github.com/systemd/slog-journal v0.1.2
 	golang.org/x/sync v0.22.0
 )
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect

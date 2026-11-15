@@ -1,0 +1,5 @@
+schema-version: v1.7
+iac:
+  ignore-rules:
+    # Keep Dependabot's default cooldown behavior.
+    - cicd-github-dependabot-cooldown

@@ -4,6 +4,12 @@ on: [push, pull_request]
 permissions:
   contents: read
 
+concurrency:
+  # pull_request runs share a per-PR group (superseded runs are cancelled);
+  # other events get a per-run group so push runs on main are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Test

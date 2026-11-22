@@ -7,7 +7,7 @@ package freebox
 import (
 	"testing"
 
-	"github.com/grandcat/zeroconf"
+	mdns "github.com/hashicorp/mdns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,19 +96,20 @@ func TestParseTXTRecord(t *testing.T) {
 func TestParseServiceEntry(t *testing.T) {
 	tests := []struct {
 		name     string
-		entry    zeroconf.ServiceEntry
+		entry    mdns.ServiceEntry
 		expected DiscoveryResult
 	}{
 		{
 			name: "full mDNS entry",
-			entry: zeroconf.ServiceEntry{
-				Port:     3615,
-				HostName: "mafreebox.freebox.fr",
-				Text: []string{
+			entry: mdns.ServiceEntry{
+				Port: 80, // SRV port is the plain HTTP port and must be ignored
+				Host: "Freebox-Server.local.",
+				InfoFields: []string{
 					"api_version=4.0",
 					"api_base_url=/api/",
 					"api_domain=mafreebox.freebox.fr",
 					"https_available=true",
+					"https_port=3615",
 				},
 			},
 			expected: DiscoveryResult{
@@ -120,44 +121,30 @@ func TestParseServiceEntry(t *testing.T) {
 			},
 		},
 		{
-			name: "entry with trailing dot in hostname",
-			entry: zeroconf.ServiceEntry{
-				Port:     3615,
-				HostName: "mafreebox.freebox.fr.",
-				Text:     []string{"api_version=4.0"},
-			},
-			expected: DiscoveryResult{
-				APIDomain:  "mafreebox.freebox.fr",
-				APIVersion: "4.0",
-				HTTPSPort:  3615,
-				APIBaseURL: "/api/",
-			},
-		},
-		{
 			name: "minimal entry with defaults",
-			entry: zeroconf.ServiceEntry{
-				Port:     80,
-				HostName: "fallback.local",
-				Text:     []string{"api_version=4.0"},
+			entry: mdns.ServiceEntry{
+				Port:       80,
+				Host:       "freebox-server.local",
+				InfoFields: []string{"api_version=4.0", "api_domain=example.fbxos.fr", "https_port=443"},
 			},
 			expected: DiscoveryResult{
-				APIDomain:  "fallback.local",
+				APIDomain:  "example.fbxos.fr",
 				APIBaseURL: "/api/",
 				APIVersion: "4.0",
-				HTTPSPort:  80,
+				HTTPSPort:  443,
 			},
 		},
 		{
 			name: "entry with api_base_url without leading slash",
-			entry: zeroconf.ServiceEntry{
-				HostName: "host.local",
-				Text:     []string{"api_version=4.0", "api_base_url=api"},
+			entry: mdns.ServiceEntry{
+				Host:       "host.local",
+				InfoFields: []string{"api_version=4.0", "api_base_url=api", "api_domain=host.example", "https_port=8443"},
 			},
 			expected: DiscoveryResult{
-				APIDomain:  "host.local",
+				APIDomain:  "host.example",
 				APIBaseURL: "api",
 				APIVersion: "4.0",
-				HTTPSPort:  0,
+				HTTPSPort:  8443,
 			},
 		},
 	}
@@ -176,24 +163,36 @@ func TestParseServiceEntry(t *testing.T) {
 }
 
 func TestParseServiceEntryMissingAPIDomain(t *testing.T) {
-	// Test that parseServiceEntry returns error when api_domain is missing and no hostname
-	entry := zeroconf.ServiceEntry{
-		Text: []string{"api_version=4.0"},
+	// api_domain is part of the TXT record advertised by the Freebox; the SRV
+	// target (Host) must not be used as a fallback, even when present.
+	entry := mdns.ServiceEntry{
+		Host:       "Freebox-Server.local.",
+		InfoFields: []string{"api_version=4.0"},
 	}
 	_, err := parseServiceEntry(&entry)
-	require.Error(t, err, "should return error when api_domain is empty and no hostname")
+	require.Error(t, err, "should return error when api_domain is missing from the TXT record")
 	assert.Contains(t, err.Error(), "empty api_domain", "error should mention empty api_domain")
+}
+
+func TestParseServiceEntryMissingHTTPSPort(t *testing.T) {
+	// https_port is part of the TXT record advertised by the Freebox; the SRV
+	// port must not be used as a fallback, even when present.
+	entry := mdns.ServiceEntry{
+		Port:       80,
+		InfoFields: []string{"api_version=4.0", "api_domain=mafreebox.freebox.fr"},
+	}
+	_, err := parseServiceEntry(&entry)
+	require.Error(t, err, "should return error when https_port is missing from the TXT record")
+	assert.Contains(t, err.Error(), "empty https_port", "error should mention empty https_port")
 }
 
 func TestParseServiceEntryMissingAPIVersion(t *testing.T) {
 	// Test that parseServiceEntry returns error when api_version is missing
-	entry := zeroconf.ServiceEntry{
-		HostName: "host.local",
-		Text:     []string{"api_domain=host.local"},
+	entry := mdns.ServiceEntry{
+		Host:       "host.local",
+		InfoFields: []string{"api_domain=host.local"},
 	}
 	_, err := parseServiceEntry(&entry)
 	require.Error(t, err, "should return error when api_version is empty")
 	assert.Contains(t, err.Error(), "empty api_version", "error should mention empty api_version")
 }
-
-

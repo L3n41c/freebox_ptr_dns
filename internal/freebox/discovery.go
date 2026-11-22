@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grandcat/zeroconf"
+	mdns "github.com/hashicorp/mdns"
 )
 
 // DiscoveryResult contains the Freebox API information obtained via mDNS discovery.
@@ -32,86 +32,127 @@ type DiscoveryResult struct {
 // discoverTimeout is the maximum time to wait for mDNS discovery.
 const discoverTimeout = 5 * time.Second
 
+// queryTimeout is the duration of a single mDNS query attempt.
+const queryTimeout = time.Second
+
+// queryRetryDelay is the pause between two query attempts.
+const queryRetryDelay = 500 * time.Millisecond
+
 // serviceName is the mDNS service name for Freebox API discovery.
 const serviceName = "_fbx-api._tcp"
+
+// serviceSuffix is the FQDN suffix of the service instances (e.g., "Freebox._fbx-api._tcp.local.").
+const serviceSuffix = serviceName + ".local."
 
 // ErrDiscoveryFailed is returned when no Freebox can be discovered on the network.
 var ErrDiscoveryFailed = errors.New("freebox: mDNS discovery failed: no Freebox found on the network")
 
-// Discover finds a Freebox on the local network using mDNS and returns its API information.
-// It searches for the "_fbx-api._tcp" service and parses the TXT record to extract
-// API configuration details.
+// Discover finds a Freebox on the local network via mDNS ("_fbx-api._tcp") and
+// parses its TXT record for the API configuration.
+//
+// Only the default multicast interface is queried (single-interface deployment).
+// Attempts are retried until discoverTimeout: the mdns library can drop an entry
+// (non-blocking send), but the Freebox answers every PTR query, so a dropped
+// entry is received again on the next attempt.
 func Discover(ctx context.Context) (DiscoveryResult, error) {
-	// Create a zeroconf resolver
-	resolver, err := zeroconf.NewResolver()
-	if err != nil {
-		return DiscoveryResult{}, fmt.Errorf("create mDNS resolver: %w", err)
+	ctx, cancel := context.WithTimeout(ctx, discoverTimeout)
+	defer cancel()
+
+	for ctx.Err() == nil {
+		result, found, err := query(ctx)
+		if found {
+			return result, nil
+		}
+		if err != nil && ctx.Err() == nil {
+			return DiscoveryResult{}, err
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(queryRetryDelay):
+		}
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return DiscoveryResult{}, ErrDiscoveryFailed
+	}
+	return DiscoveryResult{}, fmt.Errorf("mDNS discovery: %w", ctx.Err())
+}
+
+// query runs a single bounded mDNS query for the Freebox service.
+// found is false when the query completes without a matching entry.
+func query(ctx context.Context) (DiscoveryResult, bool, error) {
+	entries := make(chan *mdns.ServiceEntry, 8)
+	params := &mdns.QueryParam{
+		Service: serviceName,
+		Domain:  "local.",
+		Timeout: queryTimeout,
+		Entries: entries,
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- mdns.QueryContext(ctx, params)
+	}()
+
+	// parseIfService parses entry if it belongs to the browsed service: the mdns
+	// library does not filter answers by service type.
+	parseIfService := func(entry *mdns.ServiceEntry) (DiscoveryResult, bool, error) {
+		if !strings.HasSuffix(strings.ToLower(entry.Name), "."+serviceSuffix) {
+			return DiscoveryResult{}, false, nil
+		}
+		result, err := parseServiceEntry(entry)
+		return result, err == nil, err
 	}
 
-	// Create a context with timeout
-	discCtx, cancel := context.WithTimeout(ctx, discoverTimeout)
-
-	// Start searching for the Freebox API service
-	entries := make(chan *zeroconf.ServiceEntry, 1)
-	browseErr := make(chan error, 1)
-	defer func() {
-		cancel()
-		close(browseErr)
-	}()
-	go func() {
-		if err := resolver.Browse(discCtx, serviceName, "local.", entries); err != nil {
-			browseErr <- err
+	for {
+		select {
+		case entry := <-entries:
+			if result, found, err := parseIfService(entry); found || err != nil {
+				return result, found, err
+			}
+		case err := <-done:
+			if err != nil {
+				return DiscoveryResult{}, false, fmt.Errorf("mDNS query: %w", err)
+			}
+			// The query is over and no more entries will be sent: drain the
+			// ones received just before completion.
+			for {
+				select {
+				case entry := <-entries:
+					if result, found, err := parseIfService(entry); found || err != nil {
+						return result, found, err
+					}
+				default:
+					return DiscoveryResult{}, false, nil
+				}
+			}
+		case <-ctx.Done():
+			return DiscoveryResult{}, false, ctx.Err()
 		}
-	}()
-
-	// Wait for the first service entry
-	select {
-	case err := <-browseErr:
-		// Browse returned an error, propagate it
-		return DiscoveryResult{}, fmt.Errorf("mDNS browse: %w", err)
-	case <-discCtx.Done():
-		// Map context.DeadlineExceeded to ErrDiscoveryFailed for consistency
-		if discCtx.Err() == context.DeadlineExceeded {
-			return DiscoveryResult{}, ErrDiscoveryFailed
-		}
-		return DiscoveryResult{}, fmt.Errorf("mDNS discovery: %w", discCtx.Err())
-	case entry, ok := <-entries:
-		if !ok {
-			return DiscoveryResult{}, ErrDiscoveryFailed
-		}
-		return parseServiceEntry(entry)
 	}
 }
 
 // parseServiceEntry extracts Freebox API information from a mDNS service entry.
-func parseServiceEntry(entry *zeroconf.ServiceEntry) (DiscoveryResult, error) {
+// The TXT record of the "_fbx-api._tcp" service advertised by the Freebox carries
+// the api_domain, api_version and https_port keys (see https://dev.freebox.fr/sdk/os/);
+// all of them are required. The SRV target and port are local mDNS data and are
+// not used: the SRV port is the plain HTTP port, not the HTTPS one.
+func parseServiceEntry(entry *mdns.ServiceEntry) (DiscoveryResult, error) {
 	result := DiscoveryResult{}
 
-	// Parse TXT records first to get all fields including https_port
 	// Freebox mDNS TXT records contain key=value pairs like "api_version=4.0"
-	for _, record := range entry.Text {
+	for _, record := range entry.InfoFields {
 		if record != "" {
 			parseTXTRecord(record, &result)
 		}
 	}
 
-	// If https_port was not in TXT records, fall back to SRV port
-	if result.HTTPSPort == 0 {
-		result.HTTPSPort = entry.Port
-	}
-
-	// Validate and set defaults
 	if result.APIDomain == "" {
-		// Try to use the host name from the service entry as fallback
-		// Trim trailing dot from mDNS hostname (e.g., "freebox.local." -> "freebox.local")
-		if entry.HostName != "" {
-			result.APIDomain = strings.TrimSuffix(entry.HostName, ".")
-		} else {
-			return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty api_domain")
-		}
+		return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty api_domain")
 	}
 	if result.APIVersion == "" {
 		return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty api_version")
+	}
+	if result.HTTPSPort == 0 {
+		return DiscoveryResult{}, errors.New("freebox: mDNS discovery returned empty https_port")
 	}
 	if result.APIBaseURL == "" {
 		// Default to /api/ as per Freebox SDK

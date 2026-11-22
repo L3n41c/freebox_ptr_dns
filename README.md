@@ -30,6 +30,14 @@ Pi-hole's "Local DNS Records" only affect forward lookups (A/AAAA) and do
 **not** populate the dashboard. The only fix is a PTR-capable resolver for
 the LAN, which this project provides.
 
+### Without freebox-ptr-dns Pi-hole looks like
+
+![Pi-hole without freebox-ptr-dns](docs/images/pi-hole_without_freebox-ptr-dns.png)
+
+### With freebox-ptr-dns Pi-hole looks like
+
+![Pi-hole with freebox-ptr-dns](docs/images/pi-hole_with_freebox-ptr-dns.png)
+
 ## How it works
 
 ```

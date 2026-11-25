@@ -5,6 +5,10 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Go dependency updates
   - package-ecosystem: "gomod"

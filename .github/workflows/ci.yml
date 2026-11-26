@@ -43,7 +43,7 @@ jobs:
 
       - name: Configure Datadog Test Optimization
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
-        uses: datadog/test-visibility-github-action@5edd68fd416710b29ed386e603f4b98606f24282  # v3
+        uses: datadog/test-visibility-github-action@a54a0fcaa68eb12e11e47b5d379f3e9bd785e4a2  # v3
         with:
           languages: go
           api_key: ${{ secrets.DD_API_KEY }}
